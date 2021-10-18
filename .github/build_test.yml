@@ -1,0 +1,17 @@
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        go: [ '1.16', '1.17' ]
+    name: Go v${{ matrix.go }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup go
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+      - run:
+          - go test -v ./...
+          - go vet ./...
+          - go build cmd/main.go -o dracula

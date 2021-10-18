@@ -8,3 +8,76 @@ This repo provides both the client and server.
 ## Why
 
 Redis would be the natural choice for this type of service, but it lacks a native "count" operation for keys.
+
+## Usage
+
+To use this server, either build it (Golang required):
+```
+go build cmd/main.go
+```
+
+or include it in your application:
+
+```go
+expireAfterSeconds := 60
+s := server.NewServer(expireAfterSeconds)
+err := s.Listen(9000)
+```
+
+then use the client to put values and count them:
+
+```go
+package main
+import (
+	"time"
+	"fmt"
+	"github.com/mailsac/dracula/client"
+)
+const namespace = "default"
+
+func main() {
+	c := client.NewClient("127.0.0.1", 9000, time.Second * 6)
+    c.Listen(9001)
+	
+	// seed some entries
+	c.Put(namespace, "192.168.0.50")
+	c.Put(namespace, "192.168.0.50")
+	c.Put(namespace, "mailsac.com")
+	c.Put(namespace, "hello.msdc.co")
+	
+	total, _ := c.Count(namespace, "192.168.0.50")
+	fmt.Println("192.168.0.50", total) // 2
+	
+	// wait a while
+	time.Sleep(time.Second * 60)
+	
+	// now entries will be expired
+	total, _ = c.Count(namespace, "mailsac.com")
+	fmt.Println("mailsac.com", total) // 0
+}
+
+```
+
+Entries are grouped in a `namespace`.
+
+See `server/server_test.go` for examples.
+
+## Limitations
+
+Messages are sent over UDP and not reliable. The trade-off desired is speed. This project was initially implemented to be a throttling server, so missing a few messages wasn't a big deal.
+
+A message is limited to 1500 bytes. See `protocol/` for exactly how messages are parsed.
+
+The namespace can be 64 bytes and the data value can be 1428 bytes.
+
+## License
+
+See dependencies listed in go.mod for copyright notices and licenses.
+
+----
+
+Copyright (c) 2021 Forking Software LLC
+
+MIT License
+
+See the LICENSE file at the root of this repo.

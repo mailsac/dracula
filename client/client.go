@@ -3,8 +3,8 @@ package client
 import (
 	"errors"
 	"fmt"
-	"github.com/mailsac/throttle-counter/client/waitingmessage"
-	"github.com/mailsac/throttle-counter/protocol"
+	"github.com/mailsac/dracula/client/waitingmessage"
+	"github.com/mailsac/dracula/protocol"
 	"net"
 	"strconv"
 	"sync"
