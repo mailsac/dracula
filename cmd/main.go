@@ -10,6 +10,7 @@ import (
 var help = flag.Bool("h", false, "Print this help")
 var expireAfterSecs = flag.Int64("t", 60, "TTL secs - entries will expire after this many seconds")
 var port = flag.Int("p", 3509, "Port this server will run on")
+var verbose = flag.Bool("v", false, "Verbose logging")
 
 func main() {
 	flag.Parse()
@@ -18,6 +19,9 @@ func main() {
 		return
 	}
 	s := server.NewServer(*expireAfterSecs)
+	if *verbose {
+		s.Debug = true
+	}
 	err := s.Listen(*port)
 	if err != nil {
 		fmt.Println(err)
