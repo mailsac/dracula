@@ -1,3 +1,5 @@
 .idea/
 cmd/main
 cmd/server
+dracula
+dracula-cli

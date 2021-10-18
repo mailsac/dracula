@@ -54,7 +54,9 @@ func (c *Client) Listen(localUDPPort int) error {
 	}
 	//defer conn.Close()
 	c.conn = conn
-	fmt.Printf("client listening %s\n", conn.LocalAddr().String())
+	if c.Debug {
+		fmt.Printf("client listening %s\n", conn.LocalAddr().String())
+	}
 
 	go c.handleResponsesForever()
 	go c.handleTimeouts()

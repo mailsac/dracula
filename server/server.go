@@ -32,10 +32,11 @@ func (s *Server) Listen(udpPort int) error {
 	}
 	//defer conn.Close()
 	s.conn = conn
-	fmt.Printf("server listening %s\n", conn.LocalAddr().String())
+	if s.Debug {
+		fmt.Printf("server listening %s\n", conn.LocalAddr().String())
+	}
 
-	go s.handleForever()
-
+	s.handleForever()
 	return nil
 }
 
