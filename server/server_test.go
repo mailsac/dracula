@@ -15,11 +15,13 @@ func TestServer_Roundtrip(t *testing.T) {
 	if err := s.Listen(9000); err != nil {
 		t.Fatal(err)
 	}
+	defer s.Close()
 	c := client.NewClient("127.0.0.1", 9000, time.Second)
 	c.Debug = true
 	if err := c.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
+	defer c.Close()
 
 	// set
 	for i := 0; i < 5; i++ {
@@ -74,10 +76,10 @@ func TestServer_Roundtrip(t *testing.T) {
 	// run all multithreaded to try to confuse it
 	wg.Add(len(cases))
 	for _, testCase := range cases {
-		go func() {
-			testCase()
+		go func(tc func()) {
+			tc()
 			wg.Done()
-		}()
+		}(testCase)
 	}
 	wg.Wait()
 

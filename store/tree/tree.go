@@ -23,24 +23,33 @@ func NewTree(expireAfterSecs int64) *Tree {
 	}
 }
 
+// Keys returns the total number of entry keys in the tree, including keys that should be expired.
+// It is expensive because it will result in the entire tree being counted and expired where necessary.
 func (n *Tree) Keys() []string {
-	n.Lock()
-	defer n.Unlock()
 	var out []string
 
+	n.Lock()
 	keysI := n.tree.Keys()
+	n.Unlock()
+
 	if keysI == nil {
 		return out
 	}
+
+	var key string
 	for _, iface := range keysI {
-		out = append(out, iface.(string))
+		key = iface.(string)
+		if n.Count(key) == 0 {
+			continue
+		}
+		out = append(out, key)
 	}
 
 	return out
 }
 
 // Count will return the number of entries at `entryKey`. It has the side effect of cleaning up
-// stale entries.
+// stale entries and entry keys.
 func (n *Tree) Count(entryKey string) int {
 	n.Lock()
 	defer n.Unlock()

@@ -54,7 +54,7 @@ func (s *Store) runCleanup() {
 	}
 	maxNamespaces := hashSize / 3 // only ever clean 1/3
 
-	subtrees := make(map[string]*tree_test_go.Tree)
+	subtrees := make(map[string]*tree.Tree)
 
 	s.Lock()
 	{
@@ -69,20 +69,15 @@ func (s *Store) runCleanup() {
 			if !found {
 				continue
 			}
-			subtrees[ns] = subtreeI.(*tree_test_go.Tree)
+			subtrees[ns] = subtreeI.(*tree.Tree)
 		}
 	}
 	s.Unlock()
 
 	var subtreeKeys []string
 	for ns, subtree := range subtrees {
+		// Keys will cleanup every empty entry key
 		subtreeKeys = subtree.Keys()
-		// calling Count() on every key will enforce cleanup
-		for _, ek := range subtreeKeys {
-			subtree.Count(ek)
-		}
-
-		subtreeKeys = subtree.Keys() // getting the keys again will indicate if any are left now
 		if len(subtreeKeys) == 0 {
 			// an empty subtree can be removed from the top level namespaces
 			s.Lock()
@@ -95,17 +90,17 @@ func (s *Store) runCleanup() {
 }
 
 func (s *Store) Put(ns, entryKey string) {
-	var subtree *tree_test_go.Tree
+	var subtree *tree.Tree
 	s.Lock()
 	subtreeI, found := s.namespaces.Get(ns)
 	s.Unlock()
 	if !found {
-		subtree = tree_test_go.NewTree(s.expireAfterSecs)
+		subtree = tree.NewTree(s.expireAfterSecs)
 		s.Lock()
 		s.namespaces.Put(ns, subtree)
 		s.Unlock()
 	} else {
-		subtree = subtreeI.(*tree_test_go.Tree)
+		subtree = subtreeI.(*tree.Tree)
 	}
 
 	subtree.Put(entryKey)
@@ -118,7 +113,7 @@ func (s *Store) Count(ns, entryKey string) int {
 	if !found {
 		return 0
 	}
-	subtree := subtreeI.(*tree_test_go.Tree)
+	subtree := subtreeI.(*tree.Tree)
 
 	return subtree.Count(entryKey)
 }
