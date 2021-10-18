@@ -1,4 +1,4 @@
-module github.com/mailsac/throttle-counter
+module github.com/mailsac/dracula
 
 go 1.16
 

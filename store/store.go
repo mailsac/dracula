@@ -2,7 +2,7 @@ package store
 
 import (
 	"github.com/emirpasic/gods/maps/hashmap"
-	"github.com/mailsac/throttle-counter/store/tree"
+	"github.com/mailsac/dracula/store/tree"
 	"sync"
 	"time"
 )

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/mailsac/throttle-counter/client"
+	"github.com/mailsac/dracula/client"
 	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
@@ -89,4 +89,97 @@ func TestServer_Roundtrip(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestServer_MultipleClients(t *testing.T) {
+	// setup
+	s := NewServer(60)
+	s.Debug = true
+	if err := s.Listen(9000); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	c1 := client.NewClient("127.0.0.1", 9000, time.Second)
+	c1.Debug = true
+	if err := c1.Listen(9001); err != nil {
+		t.Fatal(err)
+	}
+	defer c1.Close()
+
+	c2 := client.NewClient("127.0.0.1", 9000, time.Second)
+	c2.Debug = true
+	if err := c2.Listen(9002); err != nil {
+		t.Fatal(err)
+	}
+	defer c2.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func(t *testing.T) {
+		c1.Put("default", "a3.com")
+		c1.Put("default", "a3.com")
+		c1.Put("default", "a3.com")
+		c1.Put("default", "a3.com")
+		c1.Put("default", "192.168.0.99")
+		time.Sleep(time.Millisecond * 250)
+
+		if count, err := c1.Count("default", "a3.com"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 4, count)
+		}
+
+		// other client's
+		if count, err := c1.Count("default", "pa.abs.com"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 3, count)
+		}
+		// repeated request
+		if count, err := c1.Count("default", "pa.abs.com"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 3, count)
+		}
+
+		// wrong namespace
+		if count, err := c1.Count("red", "a3.com"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 0, count)
+		}
+
+		wg.Done()
+	}(t)
+
+	go func(t *testing.T) {
+		c2.Put("default", "pa.abs.com")
+		c2.Put("default", "pa.abs.com")
+		c2.Put("default", "pa.abs.com")
+		c2.Put("default", "192.168.0.98")
+		time.Sleep(time.Millisecond * 250)
+
+		if count, err := c2.Count("default", "pa.abs.com"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 3, count)
+		}
+		if count, err := c2.Count("default", "192.168.0.99"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 1, count)
+		}
+		// other client's
+		if count, err := c2.Count("default", "192.168.0.99"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 1, count)
+		}
+
+		wg.Done()
+	}(t)
+
+	wg.Wait()
 }

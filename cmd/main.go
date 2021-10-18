@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/mailsac/throttle-counter/server"
+	"github.com/mailsac/dracula/server"
 	"os"
 )
 

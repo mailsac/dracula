@@ -3,8 +3,8 @@ package server
 import (
 	"errors"
 	"fmt"
-	"github.com/mailsac/throttle-counter/protocol"
-	"github.com/mailsac/throttle-counter/store"
+	"github.com/mailsac/dracula/protocol"
+	"github.com/mailsac/dracula/store"
 	"net"
 	"strconv"
 )
