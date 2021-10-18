@@ -19,6 +19,7 @@ type Server struct {
 func NewServer(expireAfterSecs int64) *Server {
 	return &Server{store: store.NewStore(expireAfterSecs)}
 }
+
 func (s *Server) Listen(udpPort int) error {
 	if s.conn != nil {
 		return errors.New("server already initialized")
@@ -36,7 +37,7 @@ func (s *Server) Listen(udpPort int) error {
 		fmt.Printf("server listening %s\n", conn.LocalAddr().String())
 	}
 
-	s.handleForever()
+	go s.handleForever()
 	return nil
 }
 

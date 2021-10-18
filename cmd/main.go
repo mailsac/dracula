@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/mailsac/dracula/server"
 	"os"
+	"sync"
 )
 
 var help = flag.Bool("h", false, "Print this help")
@@ -27,7 +28,11 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	fmt.Println("TTL server is listening on port", *port,
-		"with expiry after", *expireAfterSecs, "seconds")
-	for {}
+	if *verbose {
+		fmt.Println("will expire keys after", *expireAfterSecs, "seconds")
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	wg.Wait() // wait forever without burning cpu
 }
