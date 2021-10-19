@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"strings"
 	"unsafe"
 )
@@ -12,7 +13,7 @@ import (
 const (
 	PacketSize    = 1500
 	namespaceSize = 64
-	valueSize     = 1428
+	DataValueSize = 1428
 
 	CmdCount byte = 'C'
 	CmdPut   byte = 'P'
@@ -69,14 +70,24 @@ func (p *Packet) DataValueString() string {
 //
 // An invalid packet will still be returned, in which case error will not be nil.
 func ParsePacket(buf []byte) (*Packet, error) {
-	if len(buf) != PacketSize {
-		return nil, ErrInvalidPacketSize
+	// if not meeting minimum packet size where we , cannot parse packet below
+	if len(buf) < spaceIndex3+2 {
+		return &Packet{}, ErrInvalidPacketSize
 	}
+	// allows shorter packet to be turned into 1500 byte total packet
+	endAt := int(math.Min(float64(len(buf)), PacketSize))
+	initialData := buf[spaceIndex3+1:endAt]
+	rightSizeData := *padRight(&initialData, DataValueSize)
+
 	p := Packet{
 		Command:   buf[0],                               // then a space
 		MessageID: binary.LittleEndian.Uint32(buf[2:6]), // then a space
 		Namespace: buf[spaceIndex2+1 : spaceIndex3],     // then a space
-		DataValue: buf[spaceIndex3+1:],
+		DataValue: rightSizeData,
+	}
+
+	if len(buf) != PacketSize {
+		return &p, ErrInvalidPacketSize
 	}
 
 	//fmt.Println("ParsePacket() message id", p.MessageID, "|")
@@ -112,7 +123,7 @@ func (p *Packet) Bytes() ([]byte, error) {
 
 	mID := (*[4]byte)(unsafe.Pointer(&p.MessageID))
 	ns := *padRight(&p.Namespace, namespaceSize)
-	val := *padRight(&p.DataValue, valueSize)
+	val := *padRight(&p.DataValue, DataValueSize)
 
 	out := []byte{
 		p.Command,
