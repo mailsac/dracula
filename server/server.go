@@ -9,6 +9,10 @@ import (
 	"strconv"
 )
 
+var (
+	ErrServerAlreadyInit = errors.New("server already initialized")
+)
+
 type Server struct {
 	store    *store.Store
 	conn     *net.UDPConn
@@ -22,7 +26,7 @@ func NewServer(expireAfterSecs int64) *Server {
 
 func (s *Server) Listen(udpPort int) error {
 	if s.conn != nil {
-		return errors.New("server already initialized")
+		return ErrServerAlreadyInit
 	}
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{
 		Port: udpPort,
