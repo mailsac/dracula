@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrMessageTimedOut = errors.New("timed out waiting for message response")
+	ErrClientAlreadyInit = errors.New("client already initialized")
 )
 
 type Client struct {
@@ -43,7 +44,7 @@ func (c *Client) PendingRequests() int {
 
 func (c *Client) Listen(localUDPPort int) error {
 	if c.conn != nil {
-		return errors.New("client already initialized")
+		return ErrClientAlreadyInit
 	}
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{
 		Port: localUDPPort,
