@@ -6,15 +6,15 @@ import (
 	"github.com/mailsac/dracula/client/waitingmessage"
 	"github.com/mailsac/dracula/protocol"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 var (
-	ErrMessageTimedOut = errors.New("timed out waiting for message response")
-	ErrClientAlreadyInit = errors.New("client already initialized")
+	ErrMessageTimedOut          = errors.New("timed out waiting for message response")
+	ErrClientAlreadyInit        = errors.New("client already initialized")
+	ErrCountReturnBytesTooShort = errors.New("too few bytes returned in count callback")
 )
 
 type Client struct {
@@ -85,7 +85,7 @@ func (c *Client) Close() error {
 
 func (c *Client) handleTimeouts() {
 	for timedOutCallback := range c.messagesWaiting.TimedOutMessages {
-		timedOutCallback("", ErrMessageTimedOut)
+		timedOutCallback([]byte{}, ErrMessageTimedOut)
 		if c.disposed {
 			break
 		}
@@ -130,12 +130,12 @@ func (c *Client) handleResponsesForever() {
 
 		// handle packet error by constructing error from data value
 		if packet.Command == protocol.ResError {
-			cb("", errors.New(packet.DataValueString()))
+			cb([]byte{}, errors.New(packet.DataValueString()))
 			continue
 		}
 
 		if packet.Command == protocol.CmdCount || packet.Command == protocol.CmdPut {
-			cb(packet.DataValueString(), nil)
+			cb(packet.DataValue, nil)
 			continue
 		}
 
@@ -149,22 +149,20 @@ func (c *Client) getMessageID() uint32 {
 	return c.messageIDCounter
 }
 
-// Count creates a callback and returns the result of it
-func (c *Client) Count(namespace, value string) (int, error) {
+// Count asks for the number of unexpired entries in namespace at entryKey. The maximum supported
+// number of entries is max of type uint32.
+func (c *Client) Count(namespace, entryKey string) (int, error) {
 	messageID := c.getMessageID()
 	var wg sync.WaitGroup
-	var output int
+	var output uint32
 	var err error
-	cb := func(o string, e error) {
+	cb := func(b []byte, e error) {
 		if err != nil {
 			err = e
+		} else if len(b) < 4 {
+			err = ErrCountReturnBytesTooShort
 		} else {
-			i, err := strconv.ParseInt(o, 10, 64)
-			if err != nil {
-				err = e
-			} else {
-				output = int(i)
-			}
+			output = protocol.Uint32FromBytes(b[0:4])
 		}
 		wg.Done()
 	}
@@ -174,18 +172,18 @@ func (c *Client) Count(namespace, value string) (int, error) {
 		Command:   protocol.CmdCount,
 		MessageID: messageID,
 		Namespace: []byte(namespace),
-		DataValue: []byte(value),
+		DataValue: []byte(entryKey),
 	}, cb)
 
 	wg.Wait() // wait for callback to be called
-	return output, err
+	return int(output), err
 }
 
 func (c *Client) Put(namespace, value string) error {
 	messageID := c.getMessageID()
 	var wg sync.WaitGroup
 	var err error
-	cb := func(_ string, e error) {
+	cb := func(_ []byte, e error) {
 		err = e
 		wg.Done()
 	}
@@ -210,14 +208,14 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 	b, err := packet.Bytes()
 	if err != nil {
 		// probably bad packet
-		cb("", err)
+		cb([]byte{}, err)
 		return
 	}
 
 	err = c.messagesWaiting.Add(packet.MessageID, cb)
 	if err != nil {
 		fmt.Println("client failed adding waiting message!", packet.MessageID)
-		cb("", err)
+		cb([]byte{}, err)
 		return
 	}
 
@@ -229,7 +227,7 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 			fmt.Println("client failed callback could not be called!", packet.MessageID)
 			reCall = cb
 		}
-		reCall("", err)
+		reCall([]byte{}, err)
 		return
 	}
 
