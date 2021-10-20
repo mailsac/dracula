@@ -77,9 +77,12 @@ const (
 	serverPort = 3509
 	namespace  = "default"
 )
+var (
+	clientResponseTimeout = time.Second*6
+)
 
 func main() {
-	c := client.NewClient("127.0.0.1", serverPort, time.Second*6)
+	c := client.NewClient("127.0.0.1", serverPort, clientResponseTimeout)
 	c.Listen(9001)
 
 	// seed some entries

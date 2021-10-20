@@ -146,7 +146,7 @@ func (p *Packet) Bytes() ([]byte, error) {
 func padRight(in *[]byte, finalSize int) *[]byte {
 	inputLen := len(*in)
 	if inputLen >= finalSize {
-		return in // not copied if correcti size
+		return in // not copied if already correct size
 	}
 	out := make([]byte, finalSize)
 	copy(out[0:inputLen], *in)
