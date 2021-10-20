@@ -13,7 +13,7 @@ var (
 
 	cleanupEveryDefault = time.Second * 10
 )
-type Callback func(string, error)
+type Callback func([]byte, error)
 
 type waitingMessage struct {
 	Callback Callback

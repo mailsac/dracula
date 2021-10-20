@@ -117,6 +117,8 @@ A message is limited to 1500 bytes. See `protocol/` for exactly how messages are
 
 The namespace can be 64 bytes and the data value can be 1428 bytes.
 
+The maximum entries in a key is the highest value of uint32.
+
 ## License
 
 See dependencies listed in go.mod for copyright notices and licenses.

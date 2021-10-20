@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"github.com/mailsac/dracula/protocol"
 	"github.com/mailsac/dracula/store"
+	"math"
 	"net"
-	"strconv"
 )
 
 var (
@@ -96,12 +96,16 @@ func (s *Server) handleForever() {
 			s.respondOrLogError(remote, &p)
 			break
 		case protocol.CmdCount:
-			count := s.store.Count(packet.NamespaceString(), packet.DataValueString())
+			countInt := s.store.Count(packet.NamespaceString(), packet.DataValueString())
+			if countInt > math.MaxUint32 {
+				countInt = math.MaxUint32 // prevent overflow
+			}
+			c := uint32(countInt)
 			p := protocol.Packet{
 				Command:   protocol.CmdCount,
 				MessageID: packet.MessageID,
 				Namespace: packet.Namespace,
-				DataValue: []byte(strconv.Itoa(count)),
+				DataValue: protocol.Uint32ToBytes(c),
 			}
 			s.respondOrLogError(remote, &p)
 			break

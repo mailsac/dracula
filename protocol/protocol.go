@@ -76,13 +76,13 @@ func ParsePacket(buf []byte) (*Packet, error) {
 	}
 	// allows shorter packet to be turned into 1500 byte total packet
 	endAt := int(math.Min(float64(len(buf)), PacketSize))
-	initialData := buf[spaceIndex3+1:endAt]
+	initialData := buf[spaceIndex3+1 : endAt]
 	rightSizeData := *padRight(&initialData, DataValueSize)
 
 	p := Packet{
-		Command:   buf[0],                               // then a space
-		MessageID: binary.LittleEndian.Uint32(buf[2:6]), // then a space
-		Namespace: buf[spaceIndex2+1 : spaceIndex3],     // then a space
+		Command:   buf[0],                           // then a space
+		MessageID: Uint32FromBytes(buf[2:6]),        // then a space
+		Namespace: buf[spaceIndex2+1 : spaceIndex3], // then a space
 		DataValue: rightSizeData,
 	}
 
@@ -157,4 +157,15 @@ func padRight(in *[]byte, finalSize int) *[]byte {
 		log.Panicf("bad final size, expected %d, got %d", finalSize, len(out))
 	}
 	return &out
+}
+
+func Uint32FromBytes(fourBytes []byte) uint32 {
+	return binary.LittleEndian.Uint32(fourBytes)
+}
+
+// Uint32ToBytes returns a 4 byte slice
+func Uint32ToBytes(u uint32) []byte {
+	fourBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(fourBytes, u)
+	return fourBytes
 }
