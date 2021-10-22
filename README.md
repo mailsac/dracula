@@ -58,7 +58,8 @@ or include it in your Go application:
 
 ```go
 expireAfterSeconds := 60
-s := server.NewServer(expireAfterSeconds)
+preSharedSecret := "supersecret"
+s := server.NewServer(expireAfterSeconds, preSharedSecret)
 err := s.Listen(3509)
 ```
 
@@ -115,7 +116,7 @@ be a throttling server, so missing a few messages wasn't a big deal.
 
 A message is limited to 1500 bytes. See `protocol/` for exactly how messages are parsed.
 
-The namespace can be 64 bytes and the data value can be 1428 bytes.
+The namespace can be 64 bytes and the data value can be 1419 bytes.
 
 The maximum entries in a key is the highest value of uint32.
 

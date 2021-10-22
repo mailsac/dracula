@@ -23,17 +23,19 @@ type Client struct {
 	messagesWaiting *waitingmessage.ResponseCache // byte is the expected response command type
 
 	messageIDCounter uint32
+	preSharedKey     []byte
 
 	disposed bool
 	Debug    bool
 }
 
-func NewClient(remoteServerIP string, remoteUDPPort int, timeout time.Duration) *Client {
+func NewClient(remoteServerIP string, remoteUDPPort int, timeout time.Duration, preSharedKey string) *Client {
 	return &Client{
 		remoteServer: &net.UDPAddr{
 			Port: remoteUDPPort,
 			IP:   net.ParseIP(remoteServerIP),
 		},
+		preSharedKey:    []byte(preSharedKey),
 		messagesWaiting: waitingmessage.NewCache(timeout),
 	}
 }
@@ -143,16 +145,16 @@ func (c *Client) handleResponsesForever() {
 	}
 }
 
-func (c *Client) getMessageID() uint32 {
+func (c *Client) makeMessageID() []byte {
 	atomic.AddUint32(&c.messageIDCounter, 1)
 
-	return c.messageIDCounter
+	return protocol.Uint32ToBytes(c.messageIDCounter)
 }
 
 // Count asks for the number of unexpired entries in namespace at entryKey. The maximum supported
 // number of entries is max of type uint32.
 func (c *Client) Count(namespace, entryKey string) (int, error) {
-	messageID := c.getMessageID()
+	messageID := c.makeMessageID()
 	var wg sync.WaitGroup
 	var output uint32
 	var err error
@@ -168,33 +170,28 @@ func (c *Client) Count(namespace, entryKey string) (int, error) {
 	}
 	wg.Add(1)
 	// callback has been setup, now make the request
-	c.sendOrCallbackErr(&protocol.Packet{
-		Command:   protocol.CmdCount,
-		MessageID: messageID,
-		Namespace: []byte(namespace),
-		DataValue: []byte(entryKey),
-	}, cb)
+	p := protocol.NewPacketFromParts(protocol.CmdCount, messageID, []byte(namespace), []byte(entryKey), c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
 
 	wg.Wait() // wait for callback to be called
 	return int(output), err
 }
 
 func (c *Client) Put(namespace, value string) error {
-	messageID := c.getMessageID()
+	messageID := c.makeMessageID()
 	var wg sync.WaitGroup
 	var err error
-	cb := func(_ []byte, e error) {
+	cb := func(b []byte, e error) {
 		err = e
+		if err != nil {
+			fmt.Println(e)
+		}
 		wg.Done()
 	}
 	wg.Add(1)
 	// callback has been setup, now make the request
-	c.sendOrCallbackErr(&protocol.Packet{
-		Command:   protocol.CmdPut,
-		MessageID: messageID,
-		Namespace: []byte(namespace),
-		DataValue: []byte(value),
-	}, cb)
+	p := protocol.NewPacketFromParts(protocol.CmdPut, messageID, []byte(namespace), []byte(value), c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
 
 	wg.Wait() // wait for callback to be called
 	return err

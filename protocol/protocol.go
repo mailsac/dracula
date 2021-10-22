@@ -1,19 +1,20 @@
 package protocol
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/cespare/xxhash"
 	"log"
 	"math"
 	"strings"
-	"unsafe"
 )
 
 const (
 	PacketSize    = 1500
-	namespaceSize = 64
-	DataValueSize = 1428
+	NamespaceSize = 64
+	DataValueSize = 1419
 
 	CmdCount byte = 'C'
 	CmdPut   byte = 'P'
@@ -21,8 +22,9 @@ const (
 
 	space       byte = ' '
 	spaceIndex1      = 1
-	spaceIndex2      = 6
-	spaceIndex3      = 71
+	spaceIndex2      = 10
+	spaceIndex3      = 15
+	spaceIndex4      = 80
 )
 
 var (
@@ -31,6 +33,7 @@ var (
 	ErrProtocolSpace1     = errors.New("bad packet: expected space 1")
 	ErrProtocolSpace2     = errors.New("bad packet: expected space 1")
 	ErrProtocolSpace3     = errors.New("bad packet: expected space 3")
+	ErrBadHash            = errors.New("auth failed: packet hash invalid")
 	ErrBadOutputSize      = errors.New("wrong data size during packet construction")
 )
 
@@ -45,10 +48,34 @@ func IsResponseCmd(c byte) bool {
 }
 
 type Packet struct {
-	Command   byte
-	MessageID uint32 // fixed 4 byte number
-	Namespace []byte // fixed 64 byte string
-	DataValue []byte // fixed 1428 byte string
+	Command        byte
+	HashBytes      []byte // fixed 8 byte number
+	Hash           uint64 // fixed 8 byte number
+	MessageIDBytes []byte // fixed 4 byte number
+	MessageID      uint32 // fixed 4 byte number
+	Namespace      []byte // fixed 64 byte string
+	DataValue      []byte // fixed 1419 byte string
+}
+
+// NewPacket is a friendlier way to construct a packet and will provide conversions inline
+func NewPacket(command byte, messageID uint32, namespace, dataValue, preSharedKey string) *Packet {
+	ns := []byte(namespace)
+	dv := []byte(dataValue)
+	p := NewPacketFromParts(command, Uint32ToBytes(messageID), ns, dv, []byte(preSharedKey))
+	return p
+}
+
+func NewPacketFromParts(command byte, messageID, namespace, dataValue, preSharedKey []byte) *Packet {
+	// TODO: consider adding validations
+	p := &Packet{
+		Command:        command,
+		MessageID:      Uint32FromBytes(messageID),
+		MessageIDBytes: messageID,
+		Namespace:      *padRight(&namespace, NamespaceSize),
+		DataValue:      *padRight(&dataValue, DataValueSize),
+	}
+	p.SetHash(preSharedKey)
+	return p
 }
 
 func (p *Packet) NamespaceString() string {
@@ -60,9 +87,9 @@ func (p *Packet) DataValueString() string {
 }
 
 // ParsePacket parses a packet like:
-//    [Command char][space][Message ID uint32][space][Namespace 64 bytes][space][data remaining bytes]
+//    [Command char][space][xxhash of pre shared key + id + ns + data][space][Message ID uint32][space][Namespace 64 bytes][space][data remaining bytes]
 //
-// The MTU of 1500 is the maximum allowed packet size. That means the data key can only be 1428
+// The MTU of 1500 is the maximum allowed packet size. That means the data key can only be 1419
 // bytes max.
 //
 // The goal here is fast and simple tracking of expirable keys, so the trade off is that
@@ -70,28 +97,34 @@ func (p *Packet) DataValueString() string {
 //
 // An invalid packet will still be returned, in which case error will not be nil.
 func ParsePacket(buf []byte) (*Packet, error) {
-	// if not meeting minimum packet size where we , cannot parse packet below
-	if len(buf) < spaceIndex3+2 {
-		return &Packet{}, ErrInvalidPacketSize
+	// if not meeting minimum packet size where we, cannot parse packet below
+	if len(buf) < spaceIndex4+2 {
+		return nil, ErrInvalidPacketSize
 	}
+	hBytes := buf[spaceIndex1+1 : spaceIndex2]
+	idBytes := buf[spaceIndex2+1 : spaceIndex3]
+	nsBytes := buf[spaceIndex3+1 : spaceIndex4]
 	// allows shorter packet to be turned into 1500 byte total packet
 	endAt := int(math.Min(float64(len(buf)), PacketSize))
-	initialData := buf[spaceIndex3+1 : endAt]
-	rightSizeData := *padRight(&initialData, DataValueSize)
-
+	messageIData := buf[spaceIndex4+1 : endAt]
+	rightSizeData := *padRight(&messageIData, DataValueSize)
 	p := Packet{
-		Command:   buf[0],                           // then a space
-		MessageID: Uint32FromBytes(buf[2:6]),        // then a space
-		Namespace: buf[spaceIndex2+1 : spaceIndex3], // then a space
-		DataValue: rightSizeData,
+		Command:        buf[0], // then a space
+
+		HashBytes:      hBytes,
+		Hash:           Uint64FromBytes(hBytes),
+
+		MessageIDBytes: idBytes,                  // stored for hashing purposes later
+		MessageID:      Uint32FromBytes(idBytes), // then a space
+
+		Namespace:      nsBytes,                  // then a space
+
+		DataValue:      rightSizeData,
 	}
 
 	if len(buf) != PacketSize {
 		return &p, ErrInvalidPacketSize
 	}
-
-	//fmt.Println("ParsePacket() message id", p.MessageID, "|")
-	//fmt.Println("ParsePacket() Namespace", p.Namespace, "|", len(p.Namespace))
 
 	commandIsValid := IsRequestCmd(p.Command) || IsResponseCmd(p.Command)
 	if !commandIsValid {
@@ -111,6 +144,10 @@ func ParsePacket(buf []byte) (*Packet, error) {
 		fmt.Println("packet space 3 was", buf[spaceIndex3], "instead of", space, "\n", buf)
 		return &p, ErrProtocolSpace3
 	}
+	if buf[spaceIndex4] != space {
+		fmt.Println("packet space 4 was", buf[spaceIndex4], "instead of", space, "\n", buf)
+		return &p, ErrProtocolSpace3
+	}
 
 	return &p, nil
 }
@@ -120,26 +157,66 @@ func ParsePacket(buf []byte) (*Packet, error) {
 func (p *Packet) Bytes() ([]byte, error) {
 	//fmt.Println("Bytes()       message id", p.MessageID, "|")
 	//fmt.Println("Bytes()       Namespace", p.Namespace, "|", len(p.Namespace))
+	if len(p.HashBytes) < 8 {
+		panic("Packet.Bytes() called before setting Packet hash!")
+	}
+	if len(p.MessageIDBytes) < 4 {
+		panic("Packet.Bytes() called without MessageIDBytes!")
+	}
 
-	mID := (*[4]byte)(unsafe.Pointer(&p.MessageID))
-	ns := *padRight(&p.Namespace, namespaceSize)
-	val := *padRight(&p.DataValue, DataValueSize)
+	namespace := *padRight(&p.Namespace, NamespaceSize)
+	dataValue := *padRight(&p.DataValue, DataValueSize)
 
 	out := []byte{
 		p.Command,
 		' ',
-		mID[0], mID[1], mID[2], mID[3],
+		p.HashBytes[0], p.HashBytes[1], p.HashBytes[2], p.HashBytes[3], p.HashBytes[4], p.HashBytes[5], p.HashBytes[6], p.HashBytes[7],
+		' ',
+		p.MessageIDBytes[0], p.MessageIDBytes[1], p.MessageIDBytes[2], p.MessageIDBytes[3],
 		' ',
 	}
-	out = append(out, ns...)
+	out = append(out, namespace...)
 	out = append(out, ' ')
-	out = append(out, val...)
+	out = append(out, dataValue...)
 	if len(out) != PacketSize {
 		fmt.Println("packet size outputted was", len(out))
 		return nil, ErrBadOutputSize
 	}
 
 	return out, nil
+}
+
+// HashPacket returns an 8 byte slice
+func HashPacket(p *Packet, preSharedKey []byte) []byte {
+	// omit the spaces and hash the Message ID, Namespace, and DataValue
+	bytesToHash := append(preSharedKey, p.MessageIDBytes...)
+	bytesToHash = append(bytesToHash, p.Namespace...)
+	bytesToHash = append(bytesToHash, p.DataValue...)
+	hash := xxhash.Sum64(bytesToHash)
+	hashBytes := Uint64ToBytes(hash)
+	return hashBytes
+}
+
+// SetHash puts the hash on a packet
+func (p *Packet) SetHash(preSharedKey []byte) {
+	// omit the spaces and hash the Message ID, Namespace, and DataValue
+	bytesToHash := append(preSharedKey, p.MessageIDBytes...)
+	bytesToHash = append(bytesToHash, p.Namespace...)
+	bytesToHash = append(bytesToHash, p.DataValue...)
+	p.Hash = xxhash.Sum64(bytesToHash)
+	p.HashBytes = Uint64ToBytes(p.Hash)
+}
+
+// Validate returns an error is the packet's hash does not authenticate against the preSharedKey.
+func (p *Packet) Validate(preSharedKey []byte) error {
+	expectedHash := HashPacket(p, preSharedKey)
+	comp := bytes.Compare(expectedHash, p.HashBytes)
+	if comp != 0 {
+		// TODO: remove logging
+		//fmt.Printf("packet hash fail. expected: %d, got: %d \n", p.Hash, Uint64FromBytes(expectedHash))
+		return ErrBadHash
+	}
+	return nil
 }
 
 // padRight adds char space to make buffer reach desired size
@@ -168,4 +245,15 @@ func Uint32ToBytes(u uint32) []byte {
 	fourBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(fourBytes, u)
 	return fourBytes
+}
+
+func Uint64FromBytes(eightBytes []byte) uint64 {
+	return binary.LittleEndian.Uint64(eightBytes)
+}
+
+// Uint64ToBytes returns an 8 byte slice
+func Uint64ToBytes(u uint64) []byte {
+	eightBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(eightBytes, u)
+	return eightBytes
 }

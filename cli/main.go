@@ -44,7 +44,7 @@ func main() {
 		return
 	}
 
-	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second)
+	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second, "")
 	err := c.Listen(*localPort)
 	if err != nil {
 		fmt.Println(err)
