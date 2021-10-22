@@ -95,7 +95,8 @@ func (p *Packet) DataValueString() string {
 // The goal here is fast and simple tracking of expirable keys, so the trade off is that
 // the keys have limited length.
 //
-// An invalid packet will still be returned, in which case error will not be nil.
+// An invalid packet may still be returned it can be parsed partially, in which case error will not be nil.
+// If a packet is way too small, the pointer will be nil.
 func ParsePacket(buf []byte) (*Packet, error) {
 	// if not meeting minimum packet size where we, cannot parse packet below
 	if len(buf) < spaceIndex4+2 {

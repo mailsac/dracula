@@ -94,4 +94,11 @@ func TestParsePacketSizeTooSmall(t *testing.T) {
 	assert.Error(t, ErrInvalidPacketSize, err)
 	assert.Equal(t, DataValueSize, len(packet.DataValue),
 		"should have still parsed packet padded end bytes")
+
+	// now try packet that is way too small - should not panic
+
+	tinyBytePacket := []byte{'C', 99, ' ', 'a', 'b', 'c', ' ', 'd', 'e', 'f'}
+	tinyPacket, err := ParsePacket(tinyBytePacket)
+	assert.Error(t, ErrInvalidPacketSize)
+	assert.Nil(t, tinyPacket)
 }
