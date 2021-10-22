@@ -110,6 +110,24 @@ func (s *Server) handleForever() {
 			resPacket := protocol.NewPacketFromParts(protocol.CmdCount, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
 			s.respondOrLogError(remote, resPacket)
 			break
+		case protocol.CmdCountNamespace:
+			countInt := s.store.CountEntries(packet.NamespaceString())
+			if countInt > math.MaxUint32 {
+				countInt = math.MaxUint32 // prevent overflow
+			}
+			c := uint32(countInt)
+			resPacket := protocol.NewPacketFromParts(protocol.CmdCountNamespace, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
+			break
+		case protocol.CmdCountServer:
+			countInt := s.store.CountServerEntries()
+			if countInt > math.MaxUint32 {
+				countInt = math.MaxUint32 // prevent overflow
+			}
+			c := uint32(countInt)
+			resPacket := protocol.NewPacketFromParts(protocol.CmdCountServer, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
+			break
 		default:
 			resPacket := protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte("unknown_command_"+string(packet.Command)), s.preSharedKey)
 			s.respondOrLogError(remote, resPacket)

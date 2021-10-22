@@ -16,9 +16,11 @@ const (
 	NamespaceSize = 64
 	DataValueSize = 1419
 
-	CmdCount byte = 'C'
-	CmdPut   byte = 'P'
-	ResError byte = 'E'
+	CmdCount          byte = 'C'
+	CmdPut            byte = 'P'
+	CmdCountNamespace byte = 'N'
+	CmdCountServer    byte = 'S'
+	ResError          byte = 'E'
 
 	space       byte = ' '
 	spaceIndex1      = 1
@@ -39,12 +41,12 @@ var (
 
 // IsRequestCmd indicates if the server should accept this as a command
 func IsRequestCmd(c byte) bool {
-	return c == CmdCount || c == CmdPut
+	return c == CmdCount || c == CmdPut || c == CmdCountNamespace || c == CmdCountServer
 }
 
 // IsResponseCmd indicates if the client should accept this as a command
 func IsResponseCmd(c byte) bool {
-	return c == ResError || c == CmdCount || c == CmdPut
+	return c == ResError || IsRequestCmd(c) // any request will be ack'd back
 }
 
 type Packet struct {
@@ -110,17 +112,17 @@ func ParsePacket(buf []byte) (*Packet, error) {
 	messageIData := buf[spaceIndex4+1 : endAt]
 	rightSizeData := *padRight(&messageIData, DataValueSize)
 	p := Packet{
-		Command:        buf[0], // then a space
+		Command: buf[0], // then a space
 
-		HashBytes:      hBytes,
-		Hash:           Uint64FromBytes(hBytes),
+		HashBytes: hBytes,
+		Hash:      Uint64FromBytes(hBytes),
 
 		MessageIDBytes: idBytes,                  // stored for hashing purposes later
 		MessageID:      Uint32FromBytes(idBytes), // then a space
 
-		Namespace:      nsBytes,                  // then a space
+		Namespace: nsBytes, // then a space
 
-		DataValue:      rightSizeData,
+		DataValue: rightSizeData,
 	}
 
 	if len(buf) != PacketSize {
