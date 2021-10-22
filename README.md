@@ -32,14 +32,16 @@ We were able to achieve a service that uses about 1.2MB of RAM on startup.
 
 ## Usage
 
-*TODO: build binaries and put in github release*
-
-To use this server, build it (Golang required):
+Pre-build binaries are available in the Releases tab, or build it (Golang required):
 
 ```
 make build-server
+```
 
-./dracula -v
+Run the server with default settings and verbose logging:
+
+```
+./dracula-server -v
 ```
 
 Then use the cli for testing:
