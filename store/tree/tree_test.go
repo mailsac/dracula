@@ -9,7 +9,9 @@ import (
 func TestTree_Count(t *testing.T) {
 	t.Run("count returns number of non-expired and removes expired values", func(t *testing.T) {
 		tr := NewTree(2)
-		assert.Equal(t, 0, len(tr.Keys()))
+		keys, entryCount := tr.Keys()
+		assert.Equal(t, 0, len(keys))
+		assert.Equal(t, 0, entryCount)
 		tr.Put("willy")
 		tr.Put("willy")
 		tr.Put("Uncle Brick")
@@ -17,7 +19,9 @@ func TestTree_Count(t *testing.T) {
 		tr.Put("pander")
 		tr.Put("pander")
 
-		assert.Equal(t, 3, len(tr.Keys()))
+		keys, entryCount = tr.Keys()
+		assert.Equal(t, 3, len(keys))
+		assert.Equal(t, 6, entryCount)
 
 		// called twice in a row to make sure Count() doesn't trigger deletion or something weird
 		assert.Equal(t, 2, tr.Count("willy"))
@@ -40,14 +44,20 @@ func TestTree_Count(t *testing.T) {
 		assert.Equal(t, 0, tr.Count("Uncle Brick"))
 		assert.Equal(t, 0, tr.Count("pander"))
 
-		assert.Equal(t, 0, len(tr.Keys())) // keys should be expired, but calling this will also expire them
+		keys, entryCount = tr.Keys()
+		assert.Equal(t, 0, len(keys)) // keys should be expired, but calling this will also expire them
+		assert.Equal(t, 0, entryCount)
 
 		// now check that Keys() expires old keys
 		tr.Put("billy")
 		tr.Put("billy")
 		assert.Equal(t, 2, tr.Count("billy"))
-		assert.Equal(t, 1, len(tr.Keys()))
+		keys, entryCount = tr.Keys()
+		assert.Equal(t, 1, len(keys))
+		assert.Equal(t, 2, entryCount)
 		time.Sleep(2 * time.Second)
-		assert.Equal(t, 0, len(tr.Keys()), "Keys() should expire keys")
+		keys, entryCount = tr.Keys()
+		assert.Equal(t, 0, len(keys), "Keys() should expire keys")
+		assert.Equal(t, 0, entryCount, "Keys() should expire entries")
 	})
 }
