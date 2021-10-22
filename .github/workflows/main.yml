@@ -4,7 +4,7 @@ on: [push, pull_request, workflow_dispatch]
 
 jobs:
   build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
         go: [ '1.16', '1.17' ]
@@ -17,5 +17,3 @@ jobs:
           go-version: ${{ matrix.go }}
       - run: go test -v ./...
       - run: go vet ./...
-      - run: make build-server
-      - run: make build-cli

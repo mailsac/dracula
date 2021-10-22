@@ -11,7 +11,14 @@ import (
 var help = flag.Bool("h", false, "Print this help")
 var expireAfterSecs = flag.Int64("t", 60, "TTL secs - entries will expire after this many seconds")
 var port = flag.Int("p", 3509, "Port this server will run on")
+var secret = flag.String("s", "", "Optional pre-shared auth secret")
 var verbose = flag.Bool("v", false, "Verbose logging")
+var printVersion = flag.Bool("version", false, "Print version")
+
+// Version should be replaced at build time
+var Version = "unknown"
+// Build should be replaced at build time
+var Build = "unknown"
 
 func main() {
 	flag.Parse()
@@ -19,7 +26,11 @@ func main() {
 		flag.Usage()
 		return
 	}
-	s := server.NewServer(*expireAfterSecs)
+	if *printVersion {
+		fmt.Println(Version, Build)
+		return
+	}
+	s := server.NewServer(*expireAfterSecs, *secret)
 	if *verbose {
 		s.Debug = true
 	}

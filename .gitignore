@@ -1,5 +1,7 @@
 .idea/
+out/
 cmd/main
 cmd/server
 dracula
 dracula-cli
+dracula-server

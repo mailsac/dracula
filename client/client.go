@@ -6,15 +6,15 @@ import (
 	"github.com/mailsac/dracula/client/waitingmessage"
 	"github.com/mailsac/dracula/protocol"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 var (
-	ErrMessageTimedOut = errors.New("timed out waiting for message response")
-	ErrClientAlreadyInit = errors.New("client already initialized")
+	ErrMessageTimedOut          = errors.New("timed out waiting for message response")
+	ErrClientAlreadyInit        = errors.New("client already initialized")
+	ErrCountReturnBytesTooShort = errors.New("too few bytes returned in count callback")
 )
 
 type Client struct {
@@ -23,17 +23,19 @@ type Client struct {
 	messagesWaiting *waitingmessage.ResponseCache // byte is the expected response command type
 
 	messageIDCounter uint32
+	preSharedKey     []byte
 
 	disposed bool
 	Debug    bool
 }
 
-func NewClient(remoteServerIP string, remoteUDPPort int, timeout time.Duration) *Client {
+func NewClient(remoteServerIP string, remoteUDPPort int, timeout time.Duration, preSharedKey string) *Client {
 	return &Client{
 		remoteServer: &net.UDPAddr{
 			Port: remoteUDPPort,
 			IP:   net.ParseIP(remoteServerIP),
 		},
+		preSharedKey:    []byte(preSharedKey),
 		messagesWaiting: waitingmessage.NewCache(timeout),
 	}
 }
@@ -85,7 +87,7 @@ func (c *Client) Close() error {
 
 func (c *Client) handleTimeouts() {
 	for timedOutCallback := range c.messagesWaiting.TimedOutMessages {
-		timedOutCallback("", ErrMessageTimedOut)
+		timedOutCallback([]byte{}, ErrMessageTimedOut)
 		if c.disposed {
 			break
 		}
@@ -130,12 +132,12 @@ func (c *Client) handleResponsesForever() {
 
 		// handle packet error by constructing error from data value
 		if packet.Command == protocol.ResError {
-			cb("", errors.New(packet.DataValueString()))
+			cb([]byte{}, errors.New(packet.DataValueString()))
 			continue
 		}
 
-		if packet.Command == protocol.CmdCount || packet.Command == protocol.CmdPut {
-			cb(packet.DataValueString(), nil)
+		if packet.Command == protocol.CmdCount || packet.Command == protocol.CmdPut || packet.Command == protocol.CmdCountNamespace || packet.Command == protocol.CmdCountServer {
+			cb(packet.DataValue, nil)
 			continue
 		}
 
@@ -143,60 +145,103 @@ func (c *Client) handleResponsesForever() {
 	}
 }
 
-func (c *Client) getMessageID() uint32 {
+func (c *Client) makeMessageID() []byte {
 	atomic.AddUint32(&c.messageIDCounter, 1)
 
-	return c.messageIDCounter
+	return protocol.Uint32ToBytes(c.messageIDCounter)
 }
 
-// Count creates a callback and returns the result of it
-func (c *Client) Count(namespace, value string) (int, error) {
-	messageID := c.getMessageID()
+// Count asks for the number of unexpired entries in namespace at entryKey. The maximum supported
+// number of entries is max of type uint32.
+func (c *Client) Count(namespace, entryKey string) (int, error) {
+	messageID := c.makeMessageID()
 	var wg sync.WaitGroup
-	var output int
+	var output uint32
 	var err error
-	cb := func(o string, e error) {
+	cb := func(b []byte, e error) {
 		if err != nil {
 			err = e
+		} else if len(b) < 4 {
+			err = ErrCountReturnBytesTooShort
 		} else {
-			i, err := strconv.ParseInt(o, 10, 64)
-			if err != nil {
-				err = e
-			} else {
-				output = int(i)
-			}
+			output = protocol.Uint32FromBytes(b[0:4])
 		}
 		wg.Done()
 	}
 	wg.Add(1)
 	// callback has been setup, now make the request
-	c.sendOrCallbackErr(&protocol.Packet{
-		Command:   protocol.CmdCount,
-		MessageID: messageID,
-		Namespace: []byte(namespace),
-		DataValue: []byte(value),
-	}, cb)
+	p := protocol.NewPacketFromParts(protocol.CmdCount, messageID, []byte(namespace), []byte(entryKey), c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
 
 	wg.Wait() // wait for callback to be called
-	return output, err
+	return int(output), err
 }
 
-func (c *Client) Put(namespace, value string) error {
-	messageID := c.getMessageID()
+// CountNamespace (expensive) returns the number of key entries across all keys in a namespace.
+func (c *Client) CountNamespace(namespace string) (int, error) {
+	messageID := c.makeMessageID()
 	var wg sync.WaitGroup
+	var output uint32
 	var err error
-	cb := func(_ string, e error) {
-		err = e
+	cb := func(b []byte, e error) {
+		if err != nil {
+			err = e
+		} else if len(b) < 4 {
+			err = ErrCountReturnBytesTooShort
+		} else {
+			output = protocol.Uint32FromBytes(b[0:4])
+		}
 		wg.Done()
 	}
 	wg.Add(1)
 	// callback has been setup, now make the request
-	c.sendOrCallbackErr(&protocol.Packet{
-		Command:   protocol.CmdPut,
-		MessageID: messageID,
-		Namespace: []byte(namespace),
-		DataValue: []byte(value),
-	}, cb)
+	p := protocol.NewPacketFromParts(protocol.CmdCountNamespace, messageID, []byte(namespace), []byte{}, c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
+
+	wg.Wait() // wait for callback to be called
+	return int(output), err
+}
+
+// CountServer (very expensive) returns the number of key entries across all keys in all namespaces.
+func (c *Client) CountServer() (int, error) {
+	messageID := c.makeMessageID()
+	var wg sync.WaitGroup
+	var output uint32
+	var err error
+	cb := func(b []byte, e error) {
+		if err != nil {
+			err = e
+		} else if len(b) < 4 {
+			err = ErrCountReturnBytesTooShort
+		} else {
+			output = protocol.Uint32FromBytes(b[0:4])
+		}
+		wg.Done()
+	}
+	wg.Add(1)
+	// callback has been setup, now make the request
+	p := protocol.NewPacketFromParts(protocol.CmdCountServer, messageID, []byte{}, []byte{}, c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
+
+	wg.Wait() // wait for callback to be called
+	return int(output), err
+}
+
+func (c *Client) Put(namespace, value string) error {
+	messageID := c.makeMessageID()
+	var wg sync.WaitGroup
+	var err error
+	cb := func(b []byte, e error) {
+		err = e
+		if err != nil {
+			fmt.Println(e)
+		}
+		wg.Done()
+	}
+	wg.Add(1)
+	// callback has been setup, now make the request
+	p := protocol.NewPacketFromParts(protocol.CmdPut, messageID, []byte(namespace), []byte(value), c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
 
 	wg.Wait() // wait for callback to be called
 	return err
@@ -210,14 +255,14 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 	b, err := packet.Bytes()
 	if err != nil {
 		// probably bad packet
-		cb("", err)
+		cb([]byte{}, err)
 		return
 	}
 
 	err = c.messagesWaiting.Add(packet.MessageID, cb)
 	if err != nil {
 		fmt.Println("client failed adding waiting message!", packet.MessageID)
-		cb("", err)
+		cb([]byte{}, err)
 		return
 	}
 
@@ -229,7 +274,7 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 			fmt.Println("client failed callback could not be called!", packet.MessageID)
 			reCall = cb
 		}
-		reCall("", err)
+		reCall([]byte{}, err)
 		return
 	}
 

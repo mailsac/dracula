@@ -32,14 +32,16 @@ We were able to achieve a service that uses about 1.2MB of RAM on startup.
 
 ## Usage
 
-*TODO: build binaries and put in github release*
-
-To use this server, build it (Golang required):
+Pre-build binaries are available in the Releases tab, or build it (Golang required):
 
 ```
 make build-server
+```
 
-./dracula -v
+Run the server with default settings and verbose logging:
+
+```
+./dracula-server -v
 ```
 
 Then use the cli for testing:
@@ -58,7 +60,8 @@ or include it in your Go application:
 
 ```go
 expireAfterSeconds := 60
-s := server.NewServer(expireAfterSeconds)
+preSharedSecret := "supersecret"
+s := server.NewServer(expireAfterSeconds, preSharedSecret)
 err := s.Listen(3509)
 ```
 
@@ -77,8 +80,9 @@ const (
 	serverPort = 3509
 	namespace  = "default"
 )
+
 var (
-	clientResponseTimeout = time.Second*6
+	clientResponseTimeout = time.Second * 6
 )
 
 func main() {
@@ -111,11 +115,17 @@ See `server/server_test.go` for examples.
 ## Limitations
 
 Messages are sent over UDP and not reliable. The trade-off desired is speed. This project was initially implemented to
-be a throttling server, so missing a few messages wasn't a big deal.
+be a throttling server, so missing a few messages wasn't a big deal. Also, UDP can cause TCP traffic on the same box to
+be slower under heavy load. This was ideal for our use-case, but may not be for yours.
 
 A message is limited to 1500 bytes. See `protocol/` for exactly how messages are parsed.
 
-The namespace can be 64 bytes and the data value can be 1428 bytes.
+The namespace can be 64 bytes and the data value can be 1419 bytes.
+
+The maximum entries in a key is the highest value of uint32.
+
+Authentication is just strong enough to make sure you aren't sending messages to the wrong server. It is assumed dracula
+is running in a trusted environment.
 
 ## License
 
