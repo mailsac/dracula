@@ -10,13 +10,13 @@ import (
 
 func TestServer_Roundtrip(t *testing.T) {
 	// setup
-	s := NewServer(60)
+	s := NewServer(60, "")
 	s.Debug = true
 	if err := s.Listen(9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := client.NewClient("127.0.0.1", 9000, time.Second)
+	c := client.NewClient("127.0.0.1", 9000, time.Second, "")
 	c.Debug = true
 	if err := c.Listen(9001); err != nil {
 		t.Fatal(err)
@@ -93,21 +93,21 @@ func TestServer_Roundtrip(t *testing.T) {
 
 func TestServer_MultipleClients(t *testing.T) {
 	// setup
-	s := NewServer(60)
+	s := NewServer(60, "")
 	s.Debug = true
 	if err := s.Listen(9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 
-	c1 := client.NewClient("127.0.0.1", 9000, time.Second)
+	c1 := client.NewClient("127.0.0.1", 9000, time.Second, "")
 	c1.Debug = true
 	if err := c1.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
 	defer c1.Close()
 
-	c2 := client.NewClient("127.0.0.1", 9000, time.Second)
+	c2 := client.NewClient("127.0.0.1", 9000, time.Second, "")
 	c2.Debug = true
 	if err := c2.Listen(9002); err != nil {
 		t.Fatal(err)
