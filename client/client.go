@@ -136,7 +136,7 @@ func (c *Client) handleResponsesForever() {
 			continue
 		}
 
-		if packet.Command == protocol.CmdCount || packet.Command == protocol.CmdPut {
+		if packet.Command == protocol.CmdCount || packet.Command == protocol.CmdPut || packet.Command == protocol.CmdCountNamespace || packet.Command == protocol.CmdCountServer {
 			cb(packet.DataValue, nil)
 			continue
 		}
@@ -171,6 +171,56 @@ func (c *Client) Count(namespace, entryKey string) (int, error) {
 	wg.Add(1)
 	// callback has been setup, now make the request
 	p := protocol.NewPacketFromParts(protocol.CmdCount, messageID, []byte(namespace), []byte(entryKey), c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
+
+	wg.Wait() // wait for callback to be called
+	return int(output), err
+}
+
+// CountNamespace (expensive) returns the number of key entries across all keys in a namespace.
+func (c *Client) CountNamespace(namespace string) (int, error) {
+	messageID := c.makeMessageID()
+	var wg sync.WaitGroup
+	var output uint32
+	var err error
+	cb := func(b []byte, e error) {
+		if err != nil {
+			err = e
+		} else if len(b) < 4 {
+			err = ErrCountReturnBytesTooShort
+		} else {
+			output = protocol.Uint32FromBytes(b[0:4])
+		}
+		wg.Done()
+	}
+	wg.Add(1)
+	// callback has been setup, now make the request
+	p := protocol.NewPacketFromParts(protocol.CmdCountNamespace, messageID, []byte(namespace), []byte{}, c.preSharedKey)
+	c.sendOrCallbackErr(p, cb)
+
+	wg.Wait() // wait for callback to be called
+	return int(output), err
+}
+
+// CountServer (very expensive) returns the number of key entries across all keys in all namespaces.
+func (c *Client) CountServer() (int, error) {
+	messageID := c.makeMessageID()
+	var wg sync.WaitGroup
+	var output uint32
+	var err error
+	cb := func(b []byte, e error) {
+		if err != nil {
+			err = e
+		} else if len(b) < 4 {
+			err = ErrCountReturnBytesTooShort
+		} else {
+			output = protocol.Uint32FromBytes(b[0:4])
+		}
+		wg.Done()
+	}
+	wg.Add(1)
+	// callback has been setup, now make the request
+	p := protocol.NewPacketFromParts(protocol.CmdCountServer, messageID, []byte{}, []byte{}, c.preSharedKey)
 	c.sendOrCallbackErr(p, cb)
 
 	wg.Wait() // wait for callback to be called

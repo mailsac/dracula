@@ -77,7 +77,7 @@ func (s *Store) runCleanup() {
 	var subtreeKeys []string
 	for ns, subtree := range subtrees {
 		// Keys will cleanup every empty entry key
-		subtreeKeys = subtree.Keys()
+		subtreeKeys, _ = subtree.Keys()
 		if len(subtreeKeys) == 0 {
 			// an empty subtree can be removed from the top level namespaces
 			s.Lock()
@@ -116,4 +116,34 @@ func (s *Store) Count(ns, entryKey string) int {
 	subtree := subtreeI.(*tree.Tree)
 
 	return subtree.Count(entryKey)
+}
+
+// CountEntries returns the count of all entries for the entire namespace.
+// This is an expensive operation.
+func (s *Store) CountEntries(ns string) int {
+	s.Lock()
+	subtreeI, found := s.namespaces.Get(ns)
+	s.Unlock()
+	if !found {
+		return 0
+	}
+	subtree := subtreeI.(*tree.Tree)
+
+	_, count := subtree.Keys()
+	return count
+}
+
+// CountServerEntries returns the count of all entries for the entire server.
+// This is an extremely expensive operation.
+func (s *Store) CountServerEntries() int {
+	s.Lock()
+	spaces := s.namespaces.Keys() // they are randomly ordered
+	s.Unlock()
+	var entryCount int
+	var c int
+	for _, ns := range spaces {
+		c = s.CountEntries(ns.(string))
+		entryCount += c
+	}
+	return entryCount
 }
