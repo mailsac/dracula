@@ -10,13 +10,13 @@ import (
 
 func TestServer_Roundtrip(t *testing.T) {
 	// setup
-	s := NewServer(60)
+	s := NewServer(60, "")
 	s.Debug = true
 	if err := s.Listen(9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := client.NewClient("127.0.0.1", 9000, time.Second)
+	c := client.NewClient("127.0.0.1", 9000, time.Second, "")
 	c.Debug = true
 	if err := c.Listen(9001); err != nil {
 		t.Fatal(err)
@@ -93,21 +93,21 @@ func TestServer_Roundtrip(t *testing.T) {
 
 func TestServer_MultipleClients(t *testing.T) {
 	// setup
-	s := NewServer(60)
+	s := NewServer(60, "")
 	s.Debug = true
 	if err := s.Listen(9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 
-	c1 := client.NewClient("127.0.0.1", 9000, time.Second)
+	c1 := client.NewClient("127.0.0.1", 9000, time.Second, "")
 	c1.Debug = true
 	if err := c1.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
 	defer c1.Close()
 
-	c2 := client.NewClient("127.0.0.1", 9000, time.Second)
+	c2 := client.NewClient("127.0.0.1", 9000, time.Second, "")
 	c2.Debug = true
 	if err := c2.Listen(9002); err != nil {
 		t.Fatal(err)
@@ -123,6 +123,7 @@ func TestServer_MultipleClients(t *testing.T) {
 		c1.Put("default", "a3.com")
 		c1.Put("default", "a3.com")
 		c1.Put("default", "192.168.0.99")
+		c1.Put("secondary", "pa.abs.com")
 		time.Sleep(time.Millisecond * 250)
 
 		if count, err := c1.Count("default", "a3.com"); err != nil {
@@ -143,12 +144,26 @@ func TestServer_MultipleClients(t *testing.T) {
 		} else {
 			assert.Equal(t, 3, count)
 		}
+		// second namespace same entryKey
+		if count, err := c1.Count("secondary", "pa.abs.com"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 1, count)
+		}
 
 		// wrong namespace
 		if count, err := c1.Count("red", "a3.com"); err != nil {
 			t.Error(err)
 		} else {
 			assert.Equal(t, 0, count)
+		}
+
+		// counting across entire server
+		if count, err := c2.CountServer(); err != nil {
+			t.Error(err)
+		} else {
+			// expected to count secondary namespace as well
+			assert.Equal(t, 10, count, "failed count all server entries")
 		}
 
 		wg.Done()
@@ -176,6 +191,13 @@ func TestServer_MultipleClients(t *testing.T) {
 			t.Error(err)
 		} else {
 			assert.Equal(t, 1, count)
+		}
+
+		// counting across entire namespace
+		if count, err := c2.CountNamespace("default"); err != nil {
+			t.Error(err)
+		} else {
+			assert.Equal(t, 9, count, "failed count default ns entries")
 		}
 
 		wg.Done()

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"github.com/mailsac/dracula/protocol"
 	"github.com/mailsac/dracula/store"
+	"math"
 	"net"
-	"strconv"
 )
 
 var (
@@ -14,14 +14,16 @@ var (
 )
 
 type Server struct {
-	store    *store.Store
-	conn     *net.UDPConn
-	disposed bool
-	Debug    bool
+	store        *store.Store
+	conn         *net.UDPConn
+	disposed     bool
+	preSharedKey []byte
+	Debug        bool
 }
 
-func NewServer(expireAfterSecs int64) *Server {
-	return &Server{store: store.NewStore(expireAfterSecs)}
+func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
+	psk := []byte(preSharedKey)
+	return &Server{store: store.NewStore(expireAfterSecs), preSharedKey: psk}
 }
 
 func (s *Server) Listen(udpPort int) error {
@@ -71,15 +73,23 @@ func (s *Server) handleForever() {
 		}
 		packet, err := protocol.ParsePacket(message)
 		if err != nil {
-			p := protocol.Packet{
-				Command:   protocol.ResError,
-				MessageID: packet.MessageID,
-				Namespace: packet.Namespace,
-				DataValue: []byte(err.Error()),
+			if s.Debug {
+				fmt.Println("server received BAD packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 			}
-			s.respondOrLogError(remote, &p)
+			resPacket := protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte(err.Error()), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
 			continue
 		}
+		err = packet.Validate(s.preSharedKey)
+		if err != nil {
+			if s.Debug {
+				fmt.Println("server got bad hash:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
+			}
+			resPacket := protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte(err.Error()), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
+			continue
+		}
+
 
 		if s.Debug {
 			fmt.Println("server received packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
@@ -88,31 +98,39 @@ func (s *Server) handleForever() {
 		switch packet.Command {
 		case protocol.CmdPut:
 			s.store.Put(packet.NamespaceString(), packet.DataValueString())
-			p := protocol.Packet{
-				Command:   protocol.CmdPut,
-				MessageID: packet.MessageID,
-				Namespace: packet.Namespace,
-			}
-			s.respondOrLogError(remote, &p)
+			resPacket := protocol.NewPacket(protocol.CmdPut, packet.MessageID, packet.NamespaceString(), "", "")
+			s.respondOrLogError(remote, resPacket)
 			break
 		case protocol.CmdCount:
-			count := s.store.Count(packet.NamespaceString(), packet.DataValueString())
-			p := protocol.Packet{
-				Command:   protocol.CmdCount,
-				MessageID: packet.MessageID,
-				Namespace: packet.Namespace,
-				DataValue: []byte(strconv.Itoa(count)),
+			countInt := s.store.Count(packet.NamespaceString(), packet.DataValueString())
+			if countInt > math.MaxUint32 {
+				countInt = math.MaxUint32 // prevent overflow
 			}
-			s.respondOrLogError(remote, &p)
+			c := uint32(countInt)
+			resPacket := protocol.NewPacketFromParts(protocol.CmdCount, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
+			break
+		case protocol.CmdCountNamespace:
+			countInt := s.store.CountEntries(packet.NamespaceString())
+			if countInt > math.MaxUint32 {
+				countInt = math.MaxUint32 // prevent overflow
+			}
+			c := uint32(countInt)
+			resPacket := protocol.NewPacketFromParts(protocol.CmdCountNamespace, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
+			break
+		case protocol.CmdCountServer:
+			countInt := s.store.CountServerEntries()
+			if countInt > math.MaxUint32 {
+				countInt = math.MaxUint32 // prevent overflow
+			}
+			c := uint32(countInt)
+			resPacket := protocol.NewPacketFromParts(protocol.CmdCountServer, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
 			break
 		default:
-			p := protocol.Packet{
-				Command:   protocol.ResError,
-				MessageID: packet.MessageID,
-				Namespace: packet.Namespace,
-				DataValue: []byte("unknown_command_" + string(packet.Command)),
-			}
-			s.respondOrLogError(remote, &p)
+			resPacket := protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte("unknown_command_"+string(packet.Command)), s.preSharedKey)
+			s.respondOrLogError(remote, resPacket)
 			break
 		}
 	}

@@ -18,12 +18,22 @@ var (
 	localPort = flag.Int("lp", 3510, "Local client port to receive responses on")
 	timeoutSecs = flag.Int64("t", 6, "Request timeout in seconds")
 	help = flag.Bool("h", false, "Print help")
+	printVersion = flag.Bool("version", false, "Print version")
 )
+
+// Version should be replaced at build time
+var Version = "unknown"
+// Build should be replaced at build time
+var Build = "unknown"
 
 func main() {
 	flag.Parse()
 	if *help {
 		flag.Usage()
+		return
+	}
+	if *printVersion {
+		fmt.Println(Version, Build)
 		return
 	}
 	if *ns == "" {
@@ -44,7 +54,7 @@ func main() {
 		return
 	}
 
-	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second)
+	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second, "")
 	err := c.Listen(*localPort)
 	if err != nil {
 		fmt.Println(err)
