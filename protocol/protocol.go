@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -191,13 +190,12 @@ func (p *Packet) Bytes() ([]byte, error) {
 
 // HashPacket returns an 8 byte slice
 func HashPacket(p *Packet, preSharedKey []byte) []byte {
+	hasher := xxhash.New()
 	// omit the spaces and hash the Message ID, Namespace, and DataValue
 	bytesToHash := append(preSharedKey, p.MessageIDBytes...)
 	bytesToHash = append(bytesToHash, p.Namespace...)
 	bytesToHash = append(bytesToHash, p.DataValue...)
-	hash := xxhash.Sum64(bytesToHash)
-	hashBytes := Uint64ToBytes(hash)
-	return hashBytes
+	return hasher.Sum(bytesToHash)
 }
 
 // SetHash puts the hash on a packet
@@ -206,17 +204,15 @@ func (p *Packet) SetHash(preSharedKey []byte) {
 	bytesToHash := append(preSharedKey, p.MessageIDBytes...)
 	bytesToHash = append(bytesToHash, p.Namespace...)
 	bytesToHash = append(bytesToHash, p.DataValue...)
-	p.Hash = xxhash.Sum64(bytesToHash)
-	p.HashBytes = Uint64ToBytes(p.Hash)
+	p.HashBytes = HashPacket(p, preSharedKey)
+	p.Hash = Uint64FromBytes(p.HashBytes)
 }
 
 // Validate returns an error is the packet's hash does not authenticate against the preSharedKey.
 func (p *Packet) Validate(preSharedKey []byte) error {
-	expectedHash := HashPacket(p, preSharedKey)
-	comp := bytes.Compare(expectedHash, p.HashBytes)
-	if comp != 0 {
-		// TODO: remove logging
-		//fmt.Printf("packet hash fail. expected: %d, got: %d \n", p.Hash, Uint64FromBytes(expectedHash))
+	expectedHash := Uint64FromBytes(HashPacket(p, preSharedKey))
+	if p.Hash != expectedHash {
+		fmt.Printf("packet hash fail, packet: %d, server: %d \n", p.Hash, expectedHash)
 		return ErrBadHash
 	}
 	return nil

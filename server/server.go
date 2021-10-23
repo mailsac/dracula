@@ -7,6 +7,7 @@ import (
 	"github.com/mailsac/dracula/store"
 	"math"
 	"net"
+	"runtime"
 )
 
 const MinimumExpirySecs = 2
@@ -19,13 +20,18 @@ var (
 )
 
 type Server struct {
-	store        *store.Store
-	conn         *net.UDPConn
-	disposed     bool
-	preSharedKey []byte
-	Debug        bool
+	store             *store.Store
+	conn              *net.UDPConn
+	disposed          bool
+	preSharedKey      []byte
+	Debug             bool
+	expireAfterSecs   int64
+	messageProcessing chan *rawMessage
+}
 
-	expireAfterSecs int64
+type rawMessage struct {
+	message []byte
+	remote  *net.UDPAddr
 }
 
 func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
@@ -33,7 +39,12 @@ func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
 		panic(ErrExpiryTooSmall)
 	}
 	psk := []byte(preSharedKey)
-	return &Server{store: store.NewStore(expireAfterSecs), preSharedKey: psk, expireAfterSecs: expireAfterSecs}
+	return &Server{
+		store:             store.NewStore(expireAfterSecs),
+		preSharedKey:      psk,
+		expireAfterSecs:   expireAfterSecs,
+		messageProcessing: make(chan *rawMessage, runtime.NumCPU()),
+	}
 }
 
 func (s *Server) Listen(udpPort int) error {
@@ -53,7 +64,9 @@ func (s *Server) Listen(udpPort int) error {
 		fmt.Printf("server listening %s\n", conn.LocalAddr().String())
 	}
 
-	go s.handleForever()
+	s.setupWorkers(runtime.NumCPU()) // as many workers as buffer size of channel
+
+	go s.readUDPFrames()
 	return nil
 }
 
@@ -63,6 +76,7 @@ func (s *Server) Close() error {
 	}
 	s.disposed = true
 	s.store.DisableCleanup()
+	close(s.messageProcessing)
 	err := s.conn.Close()
 	if err != nil {
 		return err
@@ -70,7 +84,7 @@ func (s *Server) Close() error {
 	return nil
 }
 
-func (s *Server) handleForever() {
+func (s *Server) readUDPFrames() {
 	for {
 		if s.disposed {
 			break
@@ -81,6 +95,14 @@ func (s *Server) handleForever() {
 			fmt.Println("server read error:", err)
 			continue
 		}
+		s.messageProcessing <- &rawMessage{message: message, remote: remote}
+	}
+}
+
+func (s *Server) worker(messages <-chan *rawMessage) {
+	for m := range messages {
+		message := m.message
+		remote := m.remote
 		packet, err := protocol.ParsePacket(message)
 		if err != nil {
 			if s.Debug {
@@ -142,6 +164,12 @@ func (s *Server) handleForever() {
 			s.respondOrLogError(remote, resPacket)
 			break
 		}
+	}
+}
+
+func (s *Server) setupWorkers(numWorkers int) {
+	for w := 0; w <= numWorkers; w++ {
+		go s.worker(s.messageProcessing)
 	}
 }
 
