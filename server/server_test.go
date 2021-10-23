@@ -1,8 +1,10 @@
 package server
 
 import (
+	"fmt"
 	"github.com/mailsac/dracula/client"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -204,4 +206,88 @@ func TestServer_MultipleClients(t *testing.T) {
 	}(t)
 
 	wg.Wait()
+}
+
+// consider convert to benchmark
+func TestServer_HeavyConcurrency(t *testing.T) {
+	// Conditions: many clients reading and writing at once, expire keys very quickly,
+	// with large auth key.
+	rounds := 300
+	putsPerRound := 5
+	clientCount := 5
+	switchNamespaceEvery := 10
+
+	preSharedKey := helperRandStr(100)
+	s := NewServer(2, preSharedKey)
+	if err := s.Listen(9000); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	startTime := time.Now()
+	var wg sync.WaitGroup
+	wg.Add(clientCount)
+
+	for cc := 0; cc < clientCount; cc++ {
+		port := 9001 + cc
+		_c := client.NewClient("127.0.0.1", 9000, time.Second*5, preSharedKey)
+		if err := _c.Listen(port); err != nil {
+			t.Fatal(err)
+		}
+		defer _c.Close()
+
+		go func(c *client.Client) {
+			var err error
+			var ct int
+			ns := helperRandStr(60)
+			datav := helperRandStr(1000)
+			for i := 0; i < rounds; i++ {
+				if i%switchNamespaceEvery == 0 {
+					// switch namespace every once in a while
+					ns = helperRandStr(60)
+				}
+
+				// add some data
+				datav = helperRandStr(1000)
+				for j := 0; j < putsPerRound; j++ {
+					if err = c.Put(ns, datav); err != nil {
+						t.Error("put err", err)
+					}
+				}
+				// we just inserted to this namespace, so the response shouldn't ever be zero in the same
+				// loop
+				if ct, err = c.Count(ns, datav); err != nil {
+					t.Error(err)
+				} else if ct < 1 {
+					t.Error("count missing")
+				}
+				if ct, err = c.CountNamespace(ns); err != nil {
+					t.Error(err)
+				} else if ct < 1 {
+					t.Error("ns count missing")
+				}
+				if ct, err = c.CountServer(); err != nil {
+					t.Error(err)
+				} else if ct < 1 {
+					t.Error("server count missing")
+				}
+			}
+			wg.Done()
+		}(_c)
+	}
+
+	wg.Wait()
+	fmt.Println("finished heavy concurrency test after", time.Since(startTime))
+}
+
+func helperRandStr(s int) string {
+	b := make([]byte, s)
+	rand.Read(b)
+	return string(b)
+}
+
+func Test_helper(t *testing.T) {
+	fmt.Println(helperRandStr(7))
+	fmt.Println(helperRandStr(19))
+	fmt.Println(helperRandStr(88))
 }

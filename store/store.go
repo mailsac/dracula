@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+var runDuration = time.Second * 15
+// denominator of how many keys to garbage collect max on a run. if 3 then 1/3 or `<total keys>/3`
+const maxNamespacesDenom = 3
+
 // Store provides a way to store entries and count them based on namespaces.
 // Old entries are garbage collected in a way that attempts to not block for too long.
 type Store struct {
@@ -42,7 +46,7 @@ func (s *Store) runCleanup() {
 		return
 	}
 
-	defer time.AfterFunc(time.Second * 15, s.runCleanup)
+	defer time.AfterFunc(runDuration, s.runCleanup)
 
 	s.Lock()
 	keys := s.namespaces.Keys() // they are randomly ordered
@@ -52,7 +56,7 @@ func (s *Store) runCleanup() {
 	if hashSize < 3 {
 		return
 	}
-	maxNamespaces := hashSize / 3 // only ever clean 1/3
+	maxNamespaces := hashSize / maxNamespacesDenom
 
 	subtrees := make(map[string]*tree.Tree)
 
