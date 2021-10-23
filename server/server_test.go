@@ -257,17 +257,17 @@ func TestServer_HeavyConcurrency(t *testing.T) {
 				// we just inserted to this namespace, so the response shouldn't ever be zero in the same
 				// loop
 				if ct, err = c.Count(ns, datav); err != nil {
-					t.Error(err)
+					t.Error("count err", err)
 				} else if ct < 1 {
 					t.Error("count missing")
 				}
 				if ct, err = c.CountNamespace(ns); err != nil {
-					t.Error(err)
+					t.Error("count ns err", err)
 				} else if ct < 1 {
 					t.Error("ns count missing")
 				}
 				if ct, err = c.CountServer(); err != nil {
-					t.Error(err)
+					t.Error("count server err", err)
 				} else if ct < 1 {
 					t.Error("server count missing")
 				}
