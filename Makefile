@@ -6,6 +6,6 @@ build-server:
 	go build -o dracula-server cmd/main.go
 .PHONY: build-server
 
-build:
+build-all:
 	./build-all.sh
-.PHONY: build
+.PHONY: build-all
