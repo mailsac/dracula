@@ -24,6 +24,8 @@ type Server struct {
 	disposed     bool
 	preSharedKey []byte
 	Debug        bool
+
+	expireAfterSecs int64
 }
 
 func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
@@ -31,7 +33,7 @@ func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
 		panic(ErrExpiryTooSmall)
 	}
 	psk := []byte(preSharedKey)
-	return &Server{store: store.NewStore(expireAfterSecs), preSharedKey: psk}
+	return &Server{store: store.NewStore(expireAfterSecs), preSharedKey: psk, expireAfterSecs: expireAfterSecs}
 }
 
 func (s *Server) Listen(udpPort int) error {
@@ -157,4 +159,9 @@ func (s *Server) respondOrLogError(addr *net.UDPAddr, packet *protocol.Packet) {
 		fmt.Println("server error: responding", addr, err, packet)
 		return
 	}
+}
+
+// Clear is for unit testing purposes. It will completely clear the data store.
+func (s *Server) Clear() {
+	s.store = store.NewStore(s.expireAfterSecs)
 }
