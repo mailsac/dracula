@@ -27,10 +27,10 @@ jobs:
           draft: false
           prerelease: true
 
-      - name: upload artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: my-artifact
-          path: out/dracula*
+
+      - name: Upload release binaries
+        uses: alexellis/upload-assets@0.2.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["./out/dracula*"]'
