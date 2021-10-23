@@ -1,9 +1,13 @@
 package client
 
 import (
+	"github.com/mailsac/dracula/protocol"
 	"github.com/mailsac/dracula/server"
 	"github.com/stretchr/testify/assert"
+	"math"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestClient_Auth(t *testing.T) {
@@ -53,4 +57,37 @@ func TestClient_Auth(t *testing.T) {
 	err = badClient.Put("asdf", "99.33.22.44")
 	assert.Error(t, err)
 	assert.Equal(t, "auth failed: packet hash invalid", err.Error())
+}
+
+func TestClient_messageIDOverflow(t *testing.T) {
+	cl := NewClient("127.0.0.1", 9000, time.Second * 5, "")
+	cl.messageIDCounter = math.MaxUint32 - 1
+	actual := protocol.Uint32FromBytes(cl.makeMessageID())
+	assert.Equal(t, uint32(math.MaxUint32), actual)
+	actual = protocol.Uint32FromBytes(cl.makeMessageID())
+	assert.Equal(t, uint32(0), actual)
+	actual = protocol.Uint32FromBytes(cl.makeMessageID())
+	assert.Equal(t, uint32(1), actual)
+}
+
+func TestClient_messageIDThreadSafe(t *testing.T) {
+	cl := NewClient("127.0.0.1", 9000, time.Second * 5, "")
+	var wg sync.WaitGroup
+	const expected uint32 = 5001
+
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+
+		go func() {
+			for c := 0; c < 100; c++ {
+				cl.makeMessageID()
+			}
+			wg.Done()
+		}()
+	}
+
+	// Wait until all the goroutines are done.
+	wg.Wait()
+	actual := protocol.Uint32FromBytes(cl.makeMessageID())
+	assert.Equal(t, expected, actual)
 }

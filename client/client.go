@@ -146,9 +146,8 @@ func (c *Client) handleResponsesForever() {
 }
 
 func (c *Client) makeMessageID() []byte {
-	atomic.AddUint32(&c.messageIDCounter, 1)
-
-	return protocol.Uint32ToBytes(c.messageIDCounter)
+	id := atomic.AddUint32(&c.messageIDCounter, 1)
+	return protocol.Uint32ToBytes(id)
 }
 
 // Count asks for the number of unexpired entries in namespace at entryKey. The maximum supported
