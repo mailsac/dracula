@@ -9,8 +9,13 @@ import (
 	"net"
 )
 
+const MinimumExpirySecs = 2
+
 var (
-	ErrServerAlreadyInit = errors.New("server already initialized")
+	// ErrExpiryTooSmall means the server was attempted to be initialized with less than MinimumExpirySecs.
+	// Values smaller than this are unreliable so they are not allowed.
+	ErrExpiryTooSmall    = errors.New("dracula server expiry is too short")
+	ErrServerAlreadyInit = errors.New("dracula server already initialized")
 )
 
 type Server struct {
@@ -22,6 +27,9 @@ type Server struct {
 }
 
 func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
+	if expireAfterSecs < MinimumExpirySecs {
+		panic(ErrExpiryTooSmall)
+	}
 	psk := []byte(preSharedKey)
 	return &Server{store: store.NewStore(expireAfterSecs), preSharedKey: psk}
 }
@@ -89,7 +97,6 @@ func (s *Server) handleForever() {
 			s.respondOrLogError(remote, resPacket)
 			continue
 		}
-
 
 		if s.Debug {
 			fmt.Println("server received packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())

@@ -104,12 +104,15 @@ func (n *Tree) getAndCleanupUnsafe(entryKey string) *[]int64 {
 }
 
 func removeExpired(datesSecs *[]int64) *[]int64 {
-	secs := time.Now().Unix()
+	if len(*datesSecs) == 0 {
+		return datesSecs
+	}
+	currentTime := time.Now().Unix()
 	var out []int64
-	for _, ds := range *datesSecs {
-		if ds > secs {
-			// not expired
-			out = append(out, ds)
+	for _, removeAt := range *datesSecs {
+		if removeAt > currentTime {
+			// KEEP - not expired
+			out = append(out, removeAt)
 		}
 	}
 	return &out
