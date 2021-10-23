@@ -159,7 +159,7 @@ func (c *Client) Count(namespace, entryKey string) (int, error) {
 	var output uint32
 	var err error
 	cb := func(b []byte, e error) {
-		if err != nil {
+		if e != nil {
 			err = e
 		} else if len(b) < 4 {
 			err = ErrCountReturnBytesTooShort
@@ -184,7 +184,7 @@ func (c *Client) CountNamespace(namespace string) (int, error) {
 	var output uint32
 	var err error
 	cb := func(b []byte, e error) {
-		if err != nil {
+		if e != nil {
 			err = e
 		} else if len(b) < 4 {
 			err = ErrCountReturnBytesTooShort
@@ -209,7 +209,7 @@ func (c *Client) CountServer() (int, error) {
 	var output uint32
 	var err error
 	cb := func(b []byte, e error) {
-		if err != nil {
+		if e != nil {
 			err = e
 		} else if len(b) < 4 {
 			err = ErrCountReturnBytesTooShort
