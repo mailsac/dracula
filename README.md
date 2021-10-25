@@ -135,6 +135,8 @@ See dependencies listed in go.mod for copyright notices and licenses.
 
 Copyright (c) 2021 Forking Software LLC
 
-MIT License
+AGPLv3 License
 
 See the LICENSE file at the root of this repo.
+
+Dual licensing is available. Contact Forking Software LLC.
