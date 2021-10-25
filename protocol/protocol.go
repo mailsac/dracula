@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/cespare/xxhash"
+	"github.com/OneOfOne/xxhash"
 	"log"
 	"math"
 	"strings"
@@ -190,7 +190,7 @@ func (p *Packet) Bytes() ([]byte, error) {
 
 // HashPacket returns an 8 byte slice
 func HashPacket(p *Packet, preSharedKey []byte) []byte {
-	hasher := xxhash.New()
+	hasher := xxhash.New64()
 	// omit the spaces and hash the Message ID, Namespace, and DataValue
 	bytesToHash := append(preSharedKey, p.MessageIDBytes...)
 	bytesToHash = append(bytesToHash, p.Namespace...)

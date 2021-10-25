@@ -14,7 +14,7 @@ mkdir out/
 for GOOS in $PLATFORMS; do
   for GOARCH in $ARCHITECTURES; do
     echo $GOOS $GOARCH
-    GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="${LDFLAGS}" -o "out/dracula-cli_${GOOS}-${GOARCH}-${VERSION}" cli/main.go
-    GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="${LDFLAGS}" -o "out/dracula-server_${GOOS}-${GOARCH}-${VERSION}" cmd/main.go
+    CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="${LDFLAGS}" -o "out/dracula-cli_${GOOS}-${GOARCH}-${VERSION}" cli/main.go
+    CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags="${LDFLAGS}" -o "out/dracula-server_${GOOS}-${GOARCH}-${VERSION}" cmd/main.go
   done
 done
