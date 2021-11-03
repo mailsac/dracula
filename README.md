@@ -38,7 +38,12 @@ Pre-build binaries are available in the Releases tab, or build it (Golang requir
 make build-server
 ```
 
-Run the server with default settings and verbose logging:
+Optionally set a pre-shared signing secret via environment variable:
+```
+export DRACULA_SECRET=very-secure3;
+```
+
+then run the server with default settings and verbose logging:
 
 ```
 ./dracula-server -v
