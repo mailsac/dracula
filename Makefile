@@ -1,9 +1,14 @@
+test:
+	go vet ./...
+	go test ./...
+.PHONY: test
+
 build-cli:
-	go build -o dracula-cli cli/main.go
+	go build -o dracula-cli cmd/cli/main.go
 .PHONY: build-cli
 
 build-server:
-	go build -o dracula-server cmd/main.go
+	go build -o dracula-server cmd/server/main.go
 .PHONY: build-server
 
 build-all:
