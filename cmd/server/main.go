@@ -8,12 +8,14 @@ import (
 	"sync"
 )
 
-var help = flag.Bool("h", false, "Print this help")
-var expireAfterSecs = flag.Int64("t", 60, "TTL secs - entries will expire after this many seconds")
-var port = flag.Int("p", 3509, "Port this server will run on")
-var secret = flag.String("s", "", "Optional pre-shared auth secret")
-var verbose = flag.Bool("v", false, "Verbose logging")
-var printVersion = flag.Bool("version", false, "Print version")
+var (
+	help            = flag.Bool("h", false, "Print this help")
+	expireAfterSecs = flag.Int64("t", 60, "TTL secs - entries will expire after this many seconds")
+	port            = flag.Int("p", 3509, "Port this server will run on")
+	secret          = flag.String("s", "", "Optional pre-shared auth secret")
+	verbose         = flag.Bool("v", false, "Verbose logging")
+	printVersion    = flag.Bool("version", false, "Print version")
+)
 
 // Version should be replaced at build time
 var Version = "unknown"

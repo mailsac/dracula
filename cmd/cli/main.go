@@ -15,6 +15,7 @@ var (
 	count = flag.Bool("count", false, "Mode: Count items at entry key")
 	put = flag.Bool("put", false, "Mode: Put item at entry key")
 	port = flag.Int("p", 3509, "Server port to connect to")
+	secret = flag.String("s", "", "Optional pre-shared auth secret")
 	localPort = flag.Int("lp", 3510, "Local client port to receive responses on")
 	timeoutSecs = flag.Int64("t", 6, "Request timeout in seconds")
 	help = flag.Bool("h", false, "Print help")
@@ -54,7 +55,7 @@ func main() {
 		return
 	}
 
-	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second, "")
+	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second, *secret)
 	err := c.Listen(*localPort)
 	if err != nil {
 		fmt.Println(err)
