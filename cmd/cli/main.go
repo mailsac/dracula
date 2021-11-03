@@ -15,9 +15,11 @@ var (
 	count = flag.Bool("count", false, "Mode: Count items at entry key")
 	put = flag.Bool("put", false, "Mode: Put item at entry key")
 	port = flag.Int("p", 3509, "Server port to connect to")
+	secret = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
 	localPort = flag.Int("lp", 3510, "Local client port to receive responses on")
 	timeoutSecs = flag.Int64("t", 6, "Request timeout in seconds")
 	help = flag.Bool("h", false, "Print help")
+	verbose         = flag.Bool("v", false, "Verbose logging")
 	printVersion = flag.Bool("version", false, "Print version")
 )
 
@@ -27,6 +29,7 @@ var Version = "unknown"
 var Build = "unknown"
 
 func main() {
+	preSharedSecret := os.Getenv("DRACULA_SECRET")
 	flag.Parse()
 	if *help {
 		flag.Usage()
@@ -46,15 +49,20 @@ func main() {
 		fmt.Println("-k 'entrykey' is required")
 		return
 	}
-
 	validMode := (*count || *put) && !(*count && *put)
 	if !validMode {
 		flag.Usage()
 		fmt.Println("either -put or -count is required")
 		return
 	}
+	if *secret != "" {
+		preSharedSecret = *secret
+	}
 
-	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second, "")
+	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second, preSharedSecret)
+	if *verbose {
+		c.Debug = true
+	}
 	err := c.Listen(*localPort)
 	if err != nil {
 		fmt.Println(err)

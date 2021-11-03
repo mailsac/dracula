@@ -38,7 +38,13 @@ Pre-build binaries are available in the Releases tab, or build it (Golang requir
 make build-server
 ```
 
-Run the server with default settings and verbose logging:
+Optionally set a pre-shared signing secret via environment variable:
+
+```
+export DRACULA_SECRET=very-secure3;
+```
+
+then run the server with default settings and verbose logging:
 
 ```
 ./dracula-server -v
@@ -59,10 +65,22 @@ make build-cli
 or include it in your Go application:
 
 ```go
-expireAfterSeconds := 60
-preSharedSecret := "supersecret"
-s := server.NewServer(expireAfterSeconds, preSharedSecret)
-err := s.Listen(3509)
+package main
+
+import (
+	"github.com/mailsac/dracula/server"
+)
+
+func main() {
+	var expireAfterSeconds int64 = 60
+	preSharedSecret := "supersecret"
+	s := server.NewServer(expireAfterSeconds, preSharedSecret)
+	err := s.Listen(3509)
+	if err != nil {
+		panic(err)
+	}
+}
+
 ```
 
 then use the client to put values and count them:
@@ -71,9 +89,9 @@ then use the client to put values and count them:
 package main
 
 import (
-	"time"
 	"fmt"
 	"github.com/mailsac/dracula/client"
+	"time"
 )
 
 const (
@@ -86,7 +104,7 @@ var (
 )
 
 func main() {
-	c := client.NewClient("127.0.0.1", serverPort, clientResponseTimeout)
+	c := client.NewClient("127.0.0.1", serverPort, clientResponseTimeout, "very-secure3")
 	c.Listen(9001)
 
 	// seed some entries

@@ -33,6 +33,9 @@ type ResponseCache struct {
 
 func NewCache(timeout time.Duration) *ResponseCache {
 	cleanupEvery := cleanupEveryDefault
+	if cleanupEvery > timeout {
+		cleanupEvery = timeout
+	}
 
 	rc := &ResponseCache{
 		cache:            make(map[uint32]waitingMessage),
