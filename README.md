@@ -8,7 +8,7 @@ This repo provides both the client and server.
 ## Why
 
 One would think Redis is a natural choice for this type of service. When you need to just count short-lived, namespaced
-keys, Redis cannot does not exactly meet this use case. There are solutions but significant application level code is
+keys, Redis does not exactly meet this use case. There are solutions but significant application level code is
 required, or Redis needs to be wrapped in another service.
 
 One solution in Redis is to put everything at the top level like `namespace:key:entry-id` and
@@ -27,12 +27,16 @@ At the outset, we wanted to meet the following needs.
 - every key is in a namespace
 - support write-heavy operations
 - support tens of thousands of simultaneous reads and writes on low-end hardware
+- AWS graviton / ARM support
+- easy deploy
 
 We were able to achieve a service that uses about 1.2MB of RAM on startup.
 
 ## Usage
 
-Pre-build binaries are available in the Releases tab, or build it (Golang required):
+Pre-build binaries of deaxila-server and dracula-cli are available in the Releases tab.
+
+Or build it (Golang required):
 
 ```
 make build-server
