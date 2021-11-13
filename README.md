@@ -7,11 +7,11 @@ This repo provides both the client and server.
 
 ## Why
 
-One would think Redis is a natural choice for this type of service. When you need to just count short-lived, namespaced
+One would think Redis is a natural choice for this type of service. When you need to count short-lived, namespaced
 keys, Redis does not exactly meet this use case. There are solutions but significant application level code is
 required, or Redis needs to be wrapped in another service.
 
-One solution in Redis is to put everything at the top level like `namespace:key:entry-id` and
+For example, one solution in Redis is to put everything at the top level like `namespace:key:entry-id` and
 run `SCAN 0 MATCH namespace:key:*`. But it *returns all the keys*, which you can then count. It also requires that you
 implement some sort of unique ID generation. Redis does support `KEEPTTL` during `SET` to each key.
 
@@ -30,17 +30,19 @@ At the outset, we wanted to meet the following needs.
 - AWS graviton / ARM support
 - easy deploy
 
-We were able to achieve a service that uses about 1.2MB of RAM on startup.
+We were able to achieve these goals in a server that uses about 1.2MB of RAM on startup.
 
 ## Usage
 
-Pre-build binaries of deaxila-server and dracula-cli are available in the Releases tab.
+Pre-build binaries of dracula-server and dracula-cli are available in the Releases tab.
 
-Or build it (Golang required):
+Alternatively, build it (Golang required):
 
 ```
 make build-server
 ```
+
+### First Run and Test
 
 Optionally set a pre-shared signing secret via environment variable:
 
@@ -54,7 +56,7 @@ then run the server with default settings and verbose logging:
 ./dracula-server -v
 ```
 
-Then use the cli for testing:
+Then use the cli for testing. Put keys to the server:
 
 ```
 make build-cli
@@ -66,7 +68,10 @@ make build-cli
 # > 2
 ```
 
-or include it in your Go application:
+Keys can be namespaced with the `-n` flag.
+
+
+Dracula server can be embedded in your Go application:
 
 ```go
 package main
@@ -87,7 +92,7 @@ func main() {
 
 ```
 
-then use the client to put values and count them:
+then use the Go client to put values and count them:
 
 ```go
 package main
@@ -148,6 +153,16 @@ The maximum entries in a key is the highest value of uint32.
 
 Authentication is just strong enough to make sure you aren't sending messages to the wrong server. It is assumed dracula
 is running in a trusted environment.
+
+## Roadmap
+
+- High Availability
+- Persistence
+- Clients in other languages
+- Retries
+- Pipelining
+
+Please open an Issue to request a feature.
 
 ## License
 
