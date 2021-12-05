@@ -1,13 +1,13 @@
-name: dracula metrics server CI
+name: dracula build and test
 
-on: [push, pull_request, workflow_dispatch]
+on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        go: [ '1.16', '1.17' ]
+        go: [ '1.17' ]
     name: Go v${{ matrix.go }}
     steps:
       - uses: actions/checkout@v2
