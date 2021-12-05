@@ -9,22 +9,23 @@ import (
 )
 
 var (
-	ip = flag.String("i", "127.0.0.1", "Server IP to connect to")
-	ns = flag.String("n", "default", "Entry key namespace value")
-	entryKey = flag.String("k", "", "Required: entry key")
-	count = flag.Bool("count", false, "Mode: Count items at entry key")
-	put = flag.Bool("put", false, "Mode: Put item at entry key")
-	port = flag.Int("p", 3509, "Server port to connect to")
-	secret = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
-	localPort = flag.Int("lp", 3510, "Local client port to receive responses on")
-	timeoutSecs = flag.Int64("t", 6, "Request timeout in seconds")
-	help = flag.Bool("h", false, "Print help")
-	verbose         = flag.Bool("v", false, "Verbose logging")
+	ip           = flag.String("i", "127.0.0.1", "Server IP to connect to")
+	ns           = flag.String("n", "default", "Entry key namespace value")
+	entryKey     = flag.String("k", "", "Required: entry key")
+	count        = flag.Bool("count", false, "Mode: Count items at entry key")
+	put          = flag.Bool("put", false, "Mode: Put item at entry key")
+	port         = flag.Int("p", 3509, "Server port to connect to")
+	secret       = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
+	localPort    = flag.Int("lp", 3510, "Local client port to receive responses on")
+	timeoutSecs  = flag.Int64("t", 6, "Request timeout in seconds")
+	help         = flag.Bool("h", false, "Print help")
+	verbose      = flag.Bool("v", false, "Verbose logging")
 	printVersion = flag.Bool("version", false, "Print version")
 )
 
 // Version should be replaced at build time
 var Version = "unknown"
+
 // Build should be replaced at build time
 var Build = "unknown"
 
@@ -59,7 +60,7 @@ func main() {
 		preSharedSecret = *secret
 	}
 
-	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs) * time.Second, preSharedSecret)
+	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs)*time.Second, preSharedSecret)
 	if *verbose {
 		c.Debug = true
 	}

@@ -8,13 +8,14 @@ import (
 )
 
 var runDuration = time.Second * 15
+
 // denominator of how many keys to garbage collect max on a run. if 3 then 1/3 or `<total keys>/3`
 const maxNamespacesDenom = 3
 
 // Store provides a way to store entries and count them based on namespaces.
 // Old entries are garbage collected in a way that attempts to not block for too long.
 type Store struct {
-	sync.Mutex // mutext locks namespaces
+	sync.Mutex            // mutext locks namespaces
 	namespaces            *hashmap.Map
 	expireAfterSecs       int64
 	cleanupServiceEnabled bool
@@ -67,7 +68,7 @@ func (s *Store) runCleanup() {
 		var found bool
 		var subtreeI interface{}
 
-		for i:= 0; i < maxNamespaces; i++ {
+		for i := 0; i < maxNamespaces; i++ {
 			ns = keys[i].(string)
 			subtreeI, found = s.namespaces.Get(ns)
 			if !found {

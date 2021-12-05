@@ -38,7 +38,7 @@ func TestParseNewPacketFromPartsWishSecret(t *testing.T) {
 		[]byte{23, 104, 3, 0}, // message id
 		[]byte{119, 105, 108, 108, 121, 95, 110, 105, 108, 108, 121}, // namespace
 		[]byte{114, 97, 110, 100, 111, 109},                          // data value
-		secret, // with auth
+		secret,                                                       // with auth
 	)
 	asBytes, err := packet.Bytes()
 	if err != nil {

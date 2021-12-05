@@ -109,6 +109,7 @@ func removeExpired(datesSecs *[]int64) *[]int64 {
 	}
 	currentTime := time.Now().Unix()
 	var out []int64
+	// TODO: these are already sorted, so we can discard earlier entries
 	for _, removeAt := range *datesSecs {
 		if removeAt > currentTime {
 			// KEEP - not expired

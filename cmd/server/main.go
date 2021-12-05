@@ -19,6 +19,7 @@ var (
 
 // Version should be replaced at build time
 var Version = "unknown"
+
 // Build should be replaced at build time
 var Build = "unknown"
 
