@@ -34,9 +34,39 @@ We were able to achieve these goals in a server that uses about 1.2MB of RAM on 
 
 ## Usage
 
-Pre-build binaries of dracula-server and dracula-cli are available in the Releases tab.
+### Download executable
 
-Alternatively, build it (Golang required):
+Pre-built binaries of `dracula-server` and `dracula-cli` are [available in the Releases tab](https://github.com/mailsac/dracula/releases).
+
+### Run from docker
+
+dracula container images are published to:
+- https://github.com/mailsac/dracula/pkgs/container/dracula
+
+Example running the server:
+
+```bash
+docker run -d --rm -p "3509:3509/udp" --name dracula-server-test "ghcr.io/mailsac/dracula" /app/dracula-server -v
+```
+
+The dracula CLI is also included in the docker image. Dracula works from IP addresses, so to use docker you must
+first get the dracula server's container IP:
+
+```bash
+DOCKER_DRACULA_IP=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' dracula-server-test)
+echo ${DOCKER_DRACULA_IP}
+```
+
+then it is possible to use the docker `dracula-cli` and make a request to count some records:  
+```bash
+docker run --rm "ghcr.io/mailsac/dracula" /app/dracula-cli -i ${DOCKER_DRACULA_IP} -put -k testing_key
+docker run --rm "ghcr.io/mailsac/dracula" /app/dracula-cli -i ${DOCKER_DRACULA_IP} -count -k testing_key
+# 1
+```
+
+### Build from source
+
+Alternatively, build it (Golang 1.16+ recommended):
 
 ```
 make build-server

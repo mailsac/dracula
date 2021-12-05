@@ -161,6 +161,9 @@ func (c *Client) Count(namespace, entryKey string) (int, error) {
 		if e != nil {
 			err = e
 		} else if len(b) < 4 {
+			if c.Debug {
+				fmt.Println("client received too few bytes:", b)
+			}
 			err = ErrCountReturnBytesTooShort
 		} else {
 			output = protocol.Uint32FromBytes(b[0:4])
@@ -186,6 +189,9 @@ func (c *Client) CountNamespace(namespace string) (int, error) {
 		if e != nil {
 			err = e
 		} else if len(b) < 4 {
+			if c.Debug {
+				fmt.Println("client received too few bytes:", b)
+			}
 			err = ErrCountReturnBytesTooShort
 		} else {
 			output = protocol.Uint32FromBytes(b[0:4])
@@ -211,6 +217,9 @@ func (c *Client) CountServer() (int, error) {
 		if e != nil {
 			err = e
 		} else if len(b) < 4 {
+			if c.Debug {
+				fmt.Println("client received too few bytes:", b)
+			}
 			err = ErrCountReturnBytesTooShort
 		} else {
 			output = protocol.Uint32FromBytes(b[0:4])
@@ -248,7 +257,7 @@ func (c *Client) Put(namespace, value string) error {
 
 func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Callback) {
 	if c.Debug {
-		fmt.Println("client sending packet:", string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
+		fmt.Println("client sending packet:", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 	}
 
 	b, err := packet.Bytes()
@@ -268,9 +277,9 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 	_, err = c.conn.WriteToUDP(b, c.remoteServer)
 	if err != nil {
 		// immediate failure, handle here
-		reCall, err := c.messagesWaiting.Pull(packet.MessageID)
-		if err != nil {
-			fmt.Println("client failed callback could not be called!", packet.MessageID)
+		reCall, pullErr := c.messagesWaiting.Pull(packet.MessageID)
+		if pullErr != nil {
+			fmt.Println("client failed callback could not be called!", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 			reCall = cb
 		}
 		reCall([]byte{}, err)
