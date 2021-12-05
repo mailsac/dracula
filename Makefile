@@ -29,4 +29,5 @@ test-docker:
 push-docker:
 	docker push "ghcr.io/mailsac/dracula:${VERSION}"
 	docker tag "ghcr.io/mailsac/dracula:${VERSION}" "ghcr.io/mailsac/dracula:latest"
+	docker push "ghcr.io/mailsac/dracula:latest"
 .PHONY: push-docker
