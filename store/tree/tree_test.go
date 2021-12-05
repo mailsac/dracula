@@ -10,11 +10,11 @@ func TestTree_removeExpired(t *testing.T) {
 	keep1 := time.Now().Unix() + 5
 	keep2 := time.Now().Unix() + 200
 	entries := []int64{
-		time.Now().Unix() - 2, // expired
+		time.Now().Unix() - 2,  // expired
 		time.Now().Unix() - 60, // expired
-		keep1, // KEEP
-		keep2, // KEEP
-		time.Now().Unix() - 1, // expired
+		keep1,                  // KEEP
+		keep2,                  // KEEP
+		time.Now().Unix() - 1,  // expired
 	}
 
 	result := removeExpired(&entries)

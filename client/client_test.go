@@ -60,7 +60,7 @@ func TestClient_Auth(t *testing.T) {
 }
 
 func TestClient_messageIDOverflow(t *testing.T) {
-	cl := NewClient("127.0.0.1", 9000, time.Second * 5, "")
+	cl := NewClient("127.0.0.1", 9000, time.Second*5, "")
 	cl.messageIDCounter = math.MaxUint32 - 1
 	actual := protocol.Uint32FromBytes(cl.makeMessageID())
 	assert.Equal(t, uint32(math.MaxUint32), actual)
@@ -71,7 +71,7 @@ func TestClient_messageIDOverflow(t *testing.T) {
 }
 
 func TestClient_messageIDThreadSafe(t *testing.T) {
-	cl := NewClient("127.0.0.1", 9000, time.Second * 5, "")
+	cl := NewClient("127.0.0.1", 9000, time.Second*5, "")
 	var wg sync.WaitGroup
 	const expected uint32 = 5001
 

@@ -13,10 +13,11 @@ var (
 
 	cleanupEveryDefault = time.Second * 10
 )
+
 type Callback func([]byte, error)
 
 type waitingMessage struct {
-	Callback Callback
+	Callback    Callback
 	CreatedSecs int64
 }
 
@@ -64,7 +65,7 @@ func (rc *ResponseCache) Add(messageID uint32, cb Callback) error {
 	}
 
 	rc.cache[messageID] = waitingMessage{
-		Callback: cb,
+		Callback:    cb,
 		CreatedSecs: time.Now().Unix(),
 	}
 	return nil

@@ -31,10 +31,19 @@ jobs:
           draft: false
           prerelease: true
 
-
       - name: Upload release binaries
         uses: alexellis/upload-assets@0.2.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
           asset_paths: '["./out/dracula*"]'
+      - name: Build docker image
+        run: make build-docker
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Test docker image
+        run: make test-docker
+      - name: Push docker image
+        run: make push-docker
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
