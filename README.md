@@ -202,8 +202,12 @@ See dependencies listed in go.mod for copyright notices and licenses.
 
 Copyright (c) 2021 Forking Software LLC
 
-AGPLv3 License
+| Project           | License SPDX Identifier |
+|-------------------|-------------------------|
+| Dracula CLI       | LGPL-3.0 |
+| Dracula Go Client | LGPL-3.0 |
+| Dracula Server    | GPL-2.0 |
 
-See the LICENSE file at the root of this repo.
+See the files LICENSE.clients.txt and LICENSE.server.txt at the root of this repo.
 
 Dual licensing is available. Contact Forking Software LLC.
