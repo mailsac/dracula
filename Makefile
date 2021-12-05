@@ -24,7 +24,7 @@ build-docker:
 .PHONY: build-docker
 test-docker:
 	docker run -d --rm -p "3509:3509" --name dracula-server-test "mailsac/dracula:${VERSION}"
-	docker exec -ti dracula-server-test /app/dracula-cli -count -k test
+	docker exec dracula-server-test /app/dracula-cli -count -k test
 	docker kill dracula-server-test
 push-docker:
 	docker push "ghcr.io/mailsac/dracula:${VERSION}"
