@@ -28,5 +28,4 @@ test-docker:
 	docker kill dracula-server-test
 push-docker:
 	docker push "ghcr.io/mailsac/dracula:${VERSION}"
-	docker push "ghcr.io/mailsac/dracula:latest"
 .PHONY: push-docker
