@@ -13,13 +13,13 @@ import (
 func TestServer_Roundtrip(t *testing.T) {
 	// setup
 	s := NewServer(60, "")
-	s.Debug = true
+	s.DebugEnable("9000")
 	if err := s.Listen(9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 	c := client.NewClient("127.0.0.1", 9000, time.Second, "")
-	c.Debug = true
+	c.DebugEnable("9001")
 	if err := c.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +70,6 @@ func TestServer_Roundtrip(t *testing.T) {
 			} else {
 				assert.Equal(t, 0, count, "should return count for never seen value")
 			}
-		}, func() {
-
 		},
 	}
 
@@ -93,24 +91,91 @@ func TestServer_Roundtrip(t *testing.T) {
 	}
 }
 
+func TestServer_Replication(t *testing.T) {
+	peers := "127.0.0.1:9010,127.0.0.1:9020,127.0.0.1:9030"
+	// setup 3 servers
+	s1 := NewServerWithPeers(60, "asdf", "127.0.0.1:9010", peers)
+	s1.DebugEnable("9010")
+	if err := s1.Listen(9010); err != nil {
+		t.Fatal(err)
+	}
+
+	s2 := NewServerWithPeers(60, "asdf", "127.0.0.1:9020", peers)
+	s1.DebugEnable("9020")
+	if err := s2.Listen(9020); err != nil {
+		t.Fatal(err)
+	}
+
+	s3 := NewServerWithPeers(60, "asdf", "127.0.0.1:9030", peers)
+	s3.DebugEnable("9030")
+	if err := s3.Listen(9030); err != nil {
+		t.Fatal(err)
+	}
+
+	// 2 clients
+
+	// listen to server 1
+	c1 := client.NewClient("127.0.0.1", 9010, time.Second, "asdf")
+	c1.DebugEnable("9001")
+	if err := c1.Listen(9001); err != nil {
+		t.Fatal(err)
+	}
+
+	// listen to server 2
+	c2 := client.NewClient("127.0.0.1", 9020, time.Second, "asdf")
+	c2.DebugEnable("9002")
+	if err := c2.Listen(9002); err != nil {
+		t.Fatal(err)
+	}
+
+	// set
+	c1.Put("default", "asdf")
+	c2.Put("default", "asdf")
+	time.Sleep(30 * time.Millisecond)
+	// check server 3 to see whether it got those
+	asdf := s3.store.Count("default", "asdf")
+	assert.Equal(t, 2, asdf)
+
+	// check servers 1 and 2 to make sure they didn't double count
+	assert.Equal(t, 2, s1.store.Count("default", "asdf"))
+	assert.Equal(t, 2, s2.store.Count("default", "asdf"))
+
+	// cleanup
+	if err := s1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := s3.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c1.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c2.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestServer_MultipleClients(t *testing.T) {
 	// setup
 	s := NewServer(60, "")
-	s.Debug = true
+	s.DebugEnable("9000")
 	if err := s.Listen(9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 
 	c1 := client.NewClient("127.0.0.1", 9000, time.Second, "")
-	c1.Debug = true
+	c1.DebugEnable("9001")
 	if err := c1.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
 	defer c1.Close()
 
 	c2 := client.NewClient("127.0.0.1", 9000, time.Second, "")
-	c2.Debug = true
+	c2.DebugEnable("9002")
 	if err := c2.Listen(9002); err != nil {
 		t.Fatal(err)
 	}
@@ -278,6 +343,9 @@ func TestServer_HeavyConcurrency(t *testing.T) {
 
 	wg.Wait()
 	fmt.Println("finished heavy concurrency test after", time.Since(startTime))
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func helperRandStr(s int) string {

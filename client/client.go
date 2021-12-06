@@ -2,10 +2,12 @@ package client
 
 import (
 	"errors"
-	"fmt"
 	"github.com/mailsac/dracula/client/waitingmessage"
 	"github.com/mailsac/dracula/protocol"
+	"io/ioutil"
+	"log"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,18 +28,30 @@ type Client struct {
 	preSharedKey     []byte
 
 	disposed bool
-	Debug    bool
+	log      *log.Logger
 }
 
 func NewClient(remoteServerIP string, remoteUDPPort int, timeout time.Duration, preSharedKey string) *Client {
-	return &Client{
+	c := &Client{
 		remoteServer: &net.UDPAddr{
 			Port: remoteUDPPort,
 			IP:   net.ParseIP(remoteServerIP),
 		},
 		preSharedKey:    []byte(preSharedKey),
 		messagesWaiting: waitingmessage.NewCache(timeout),
+		log:             log.New(os.Stdout, "", 0),
 	}
+	c.DebugDisable()
+	return c
+}
+
+func (c *Client) DebugEnable(prefix string) {
+	c.log.SetOutput(os.Stdout)
+	c.log.SetPrefix(prefix + " ")
+}
+
+func (c *Client) DebugDisable() {
+	c.log.SetOutput(ioutil.Discard)
 }
 
 func (c *Client) PendingRequests() int {
@@ -57,9 +71,7 @@ func (c *Client) Listen(localUDPPort int) error {
 	}
 	//defer conn.Close()
 	c.conn = conn
-	if c.Debug {
-		fmt.Printf("client listening %s\n", conn.LocalAddr().String())
-	}
+	c.log.Printf("client listening %s\n", conn.LocalAddr().String())
 
 	go c.handleResponsesForever()
 	go c.handleTimeouts()
@@ -102,31 +114,29 @@ func (c *Client) handleResponsesForever() {
 		message := make([]byte, protocol.PacketSize)
 		_, remote, err := c.conn.ReadFromUDP(message[:])
 		if err != nil {
-			fmt.Println("client read error:", err)
+			c.log.Println("client read error:", err)
 			continue
 		}
 		packet, err := protocol.ParsePacket(message)
 		if err != nil {
 			if packet != nil && packet.MessageID > 0 {
-				fmt.Println("client parse packet error but has message id:", packet.MessageID, remote, err, message)
+				c.log.Println("client parse packet error but has message id:", packet.MessageID, remote, err, message)
 			} else {
-				fmt.Println("client received invalid packet from", remote, err, message)
+				c.log.Println("client received invalid packet from", remote, err, message)
 				continue
 			}
 		}
 
-		if c.Debug {
-			fmt.Println("client received packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
-		}
+		c.log.Println("client received packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 
 		cb, err := c.messagesWaiting.Pull(packet.MessageID)
 		if err != nil {
-			fmt.Println("client message not expected:", packet.Command, packet.MessageID, packet.NamespaceString(), err)
+			c.log.Println("client message not expected:", packet.Command, packet.MessageID, packet.NamespaceString(), err)
 			continue
 		}
 
 		if !protocol.IsResponseCmd(packet.Command) {
-			fmt.Println("client message not response command:", packet.Command, packet.MessageID, packet.NamespaceString())
+			c.log.Println("client message not response command:", packet.Command, packet.MessageID, packet.NamespaceString())
 			continue
 		}
 
@@ -141,7 +151,7 @@ func (c *Client) handleResponsesForever() {
 			continue
 		}
 
-		fmt.Println("client unhandled valid response!", packet.Command, packet.MessageID, packet.NamespaceString())
+		c.log.Println("client unhandled valid response!", packet.Command, packet.MessageID, packet.NamespaceString())
 	}
 }
 
@@ -161,9 +171,7 @@ func (c *Client) Count(namespace, entryKey string) (int, error) {
 		if e != nil {
 			err = e
 		} else if len(b) < 4 {
-			if c.Debug {
-				fmt.Println("client received too few bytes:", b)
-			}
+			c.log.Println("client received too few bytes:", b)
 			err = ErrCountReturnBytesTooShort
 		} else {
 			output = protocol.Uint32FromBytes(b[0:4])
@@ -189,9 +197,7 @@ func (c *Client) CountNamespace(namespace string) (int, error) {
 		if e != nil {
 			err = e
 		} else if len(b) < 4 {
-			if c.Debug {
-				fmt.Println("client received too few bytes:", b)
-			}
+			c.log.Println("client received too few bytes:", b)
 			err = ErrCountReturnBytesTooShort
 		} else {
 			output = protocol.Uint32FromBytes(b[0:4])
@@ -217,9 +223,7 @@ func (c *Client) CountServer() (int, error) {
 		if e != nil {
 			err = e
 		} else if len(b) < 4 {
-			if c.Debug {
-				fmt.Println("client received too few bytes:", b)
-			}
+			c.log.Println("client received too few bytes:", b)
 			err = ErrCountReturnBytesTooShort
 		} else {
 			output = protocol.Uint32FromBytes(b[0:4])
@@ -241,9 +245,7 @@ func (c *Client) Put(namespace, value string) error {
 	var err error
 	cb := func(b []byte, e error) {
 		err = e
-		if err != nil {
-			fmt.Println(e)
-		}
+		c.log.Println("client put error", e)
 		wg.Done()
 	}
 	wg.Add(1)
@@ -256,9 +258,7 @@ func (c *Client) Put(namespace, value string) error {
 }
 
 func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Callback) {
-	if c.Debug {
-		fmt.Println("client sending packet:", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
-	}
+	c.log.Println("client sending packet:", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 
 	b, err := packet.Bytes()
 	if err != nil {
@@ -269,7 +269,7 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 
 	err = c.messagesWaiting.Add(packet.MessageID, cb)
 	if err != nil {
-		fmt.Println("client failed adding waiting message!", packet.MessageID)
+		c.log.Println("client failed adding waiting message!", packet.MessageID)
 		cb([]byte{}, err)
 		return
 	}
@@ -279,7 +279,7 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 		// immediate failure, handle here
 		reCall, pullErr := c.messagesWaiting.Pull(packet.MessageID)
 		if pullErr != nil {
-			fmt.Println("client failed callback could not be called!", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
+			c.log.Println("client failed callback could not be called!", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 			reCall = cb
 		}
 		reCall([]byte{}, err)

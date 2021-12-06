@@ -17,6 +17,7 @@ const (
 
 	CmdCount          byte = 'C'
 	CmdPut            byte = 'P'
+	CmdPutReplicate   byte = 'R'
 	CmdCountNamespace byte = 'N'
 	CmdCountServer    byte = 'S'
 	ResError          byte = 'E'
@@ -40,7 +41,7 @@ var (
 
 // IsRequestCmd indicates if the server should accept this as a command
 func IsRequestCmd(c byte) bool {
-	return c == CmdCount || c == CmdPut || c == CmdCountNamespace || c == CmdCountServer
+	return c == CmdCount || c == CmdPut || c == CmdCountNamespace || c == CmdCountServer || c == CmdPutReplicate
 }
 
 // IsResponseCmd indicates if the client should accept this as a command

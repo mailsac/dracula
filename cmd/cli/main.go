@@ -62,7 +62,7 @@ func main() {
 
 	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs)*time.Second, preSharedSecret)
 	if *verbose {
-		c.Debug = true
+		c.DebugEnable(fmt.Sprintf("%d", *port))
 	}
 	err := c.Listen(*localPort)
 	if err != nil {

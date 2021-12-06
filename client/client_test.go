@@ -20,7 +20,7 @@ func TestClient_Auth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Debug = true
+	s.DebugEnable("9000")
 	defer s.Close()
 
 	goodClient := NewClient("127.0.0.1", 9000, 5, secret)
@@ -28,7 +28,7 @@ func TestClient_Auth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	goodClient.Debug = true
+	goodClient.DebugEnable("9001")
 	defer goodClient.Close()
 
 	badClient := NewClient("127.0.0.1", 9000, 5, badSecret)
@@ -36,7 +36,7 @@ func TestClient_Auth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	badClient.Debug = true
+	badClient.DebugEnable("9002")
 	defer badClient.Close()
 
 	// good client checks
