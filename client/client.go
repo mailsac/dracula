@@ -2,12 +2,16 @@ package client
 
 import (
 	"errors"
+	"fmt"
+	"github.com/mailsac/dracula/client/serverpool"
 	"github.com/mailsac/dracula/client/waitingmessage"
 	"github.com/mailsac/dracula/protocol"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,11 +21,15 @@ var (
 	ErrMessageTimedOut          = errors.New("timed out waiting for message response")
 	ErrClientAlreadyInit        = errors.New("client already initialized")
 	ErrCountReturnBytesTooShort = errors.New("too few bytes returned in count callback")
+	ErrNoHealthyServers         = errors.New("no healthy dracula servers")
 )
 
 type Client struct {
-	conn            *net.UDPConn
-	remoteServer    *net.UDPAddr
+	// conn is this clients incoming listen connection
+	conn *net.UDPConn
+	// pool is the list of servers it will communciate with
+	pool *serverpool.Pool
+	//remoteServer    *net.UDPAddr
 	messagesWaiting *waitingmessage.ResponseCache // byte is the expected response command type
 
 	messageIDCounter uint32
@@ -31,18 +39,39 @@ type Client struct {
 	log      *log.Logger
 }
 
-func NewClient(remoteServerIP string, remoteUDPPort int, timeout time.Duration, preSharedKey string) *Client {
+func NewClient(remoteServerIPPortList string, timeout time.Duration, preSharedKey string) *Client {
+	var servers []*net.UDPAddr
+	parts := strings.Split(remoteServerIPPortList, ",")
+	if len(parts) < 1 {
+		panic("missing dracula server list on client init!")
+	}
+	for _, ipPort := range parts {
+		p := strings.Split(ipPort, ":")
+		if len(p) != 2 {
+			panic(fmt.Errorf("bad <ip:port> dracula client init %s", ipPort))
+		}
+		sport, err := strconv.Atoi(p[1])
+		if err != nil {
+			panic(fmt.Errorf("bad ip:<port> dracula client init %s", ipPort))
+		}
+		servers = append(servers, &net.UDPAddr{
+			IP:   net.ParseIP(p[0]),
+			Port: sport,
+		})
+	}
 	c := &Client{
-		remoteServer: &net.UDPAddr{
-			Port: remoteUDPPort,
-			IP:   net.ParseIP(remoteServerIP),
-		},
 		preSharedKey:    []byte(preSharedKey),
 		messagesWaiting: waitingmessage.NewCache(timeout),
 		log:             log.New(os.Stdout, "", 0),
 	}
+	c.pool = serverpool.NewPool(c, servers)
+
 	c.DebugDisable()
 	return c
+}
+
+func (c *Client) GetConn() *net.UDPConn {
+	return c.conn
 }
 
 func (c *Client) DebugEnable(prefix string) {
@@ -76,6 +105,9 @@ func (c *Client) Listen(localUDPPort int) error {
 	go c.handleResponsesForever()
 	go c.handleTimeouts()
 
+	c.pool.Listen()
+	c.log.Printf("client created server pool %v\n", c.pool.ListServers())
+
 	return nil
 }
 
@@ -87,6 +119,9 @@ func (c *Client) Close() error {
 	c.disposed = true
 	c.messagesWaiting.Dispose()
 
+	if c.pool != nil {
+		c.pool.Dispose()
+	}
 	if c.conn != nil {
 		err = c.conn.Close()
 		if err != nil {
@@ -187,6 +222,26 @@ func (c *Client) Count(namespace, entryKey string) (int, error) {
 	return int(output), err
 }
 
+// Healthcheck implements serverpool.Checker
+func (c *Client) Healthcheck(specificServer *net.UDPAddr) error {
+	messageID := c.makeMessageID()
+	var wg sync.WaitGroup
+	var err error
+	cb := func(b []byte, e error) {
+		if e != nil {
+			err = e
+		}
+		wg.Done()
+	}
+	wg.Add(1)
+	// callback has been setup, now make the request
+	p := protocol.NewPacketFromParts(protocol.CmdCount, messageID, []byte("server_healthcheck_"+specificServer.String()), []byte("check"), c.preSharedKey)
+	c._send(p, specificServer, cb)
+
+	wg.Wait() // wait for callback to be called
+	return err
+}
+
 // CountNamespace (expensive) returns the number of key entries across all keys in a namespace.
 func (c *Client) CountNamespace(namespace string) (int, error) {
 	messageID := c.makeMessageID()
@@ -257,8 +312,8 @@ func (c *Client) Put(namespace, value string) error {
 	return err
 }
 
-func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Callback) {
-	c.log.Println("client sending packet:", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
+func (c *Client) _send(packet *protocol.Packet, remoteServer *net.UDPAddr, cb waitingmessage.Callback) {
+	c.log.Println("client sending packet:", remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 
 	b, err := packet.Bytes()
 	if err != nil {
@@ -274,12 +329,12 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 		return
 	}
 
-	_, err = c.conn.WriteToUDP(b, c.remoteServer)
+	_, err = c.conn.WriteToUDP(b, remoteServer)
 	if err != nil {
 		// immediate failure, handle here
 		reCall, pullErr := c.messagesWaiting.Pull(packet.MessageID)
 		if pullErr != nil {
-			c.log.Println("client failed callback could not be called!", c.remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
+			c.log.Println("client failed callback could not be called!", remoteServer, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 			reCall = cb
 		}
 		reCall([]byte{}, err)
@@ -287,4 +342,13 @@ func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Ca
 	}
 
 	// ok
+}
+
+func (c *Client) sendOrCallbackErr(packet *protocol.Packet, cb waitingmessage.Callback) {
+	remoteServer := c.pool.Choose()
+	if remoteServer == nil {
+		cb([]byte{}, ErrNoHealthyServers)
+		return
+	}
+	c._send(packet, remoteServer, cb)
 }

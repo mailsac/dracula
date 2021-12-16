@@ -9,14 +9,13 @@ import (
 )
 
 var (
-	ip           = flag.String("i", "127.0.0.1", "Server IP to connect to")
+	ipPortPairs  = flag.String("i", "127.0.0.1:3509", "List of one or more comma-separated server <ip:port> to connect to")
 	ns           = flag.String("n", "default", "Entry key namespace value")
 	entryKey     = flag.String("k", "", "Required: entry key")
 	count        = flag.Bool("count", false, "Mode: Count items at entry key")
 	put          = flag.Bool("put", false, "Mode: Put item at entry key")
-	port         = flag.Int("p", 3509, "Server port to connect to")
 	secret       = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
-	localPort    = flag.Int("lp", 3510, "Local client port to receive responses on")
+	localPort    = flag.Int("p", 3510, "Local client port to receive responses on")
 	timeoutSecs  = flag.Int64("t", 6, "Request timeout in seconds")
 	help         = flag.Bool("h", false, "Print help")
 	verbose      = flag.Bool("v", false, "Verbose logging")
@@ -60,9 +59,9 @@ func main() {
 		preSharedSecret = *secret
 	}
 
-	c := client.NewClient(*ip, *port, time.Duration(*timeoutSecs)*time.Second, preSharedSecret)
+	c := client.NewClient(*ipPortPairs, time.Duration(*timeoutSecs)*time.Second, preSharedSecret)
 	if *verbose {
-		c.DebugEnable(fmt.Sprintf("%d", *port))
+		c.DebugEnable(fmt.Sprintf("%d", *localPort))
 	}
 	err := c.Listen(*localPort)
 	if err != nil {

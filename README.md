@@ -134,7 +134,8 @@ import (
 )
 
 const (
-	serverPort = 3509
+	// include just one server or comma-separated pool
+    serverIPPortPool = "127.0.0.1:3509,192.168.0.1:3509"
 	namespace  = "default"
 )
 
@@ -143,7 +144,7 @@ var (
 )
 
 func main() {
-	c := client.NewClient("127.0.0.1", serverPort, clientResponseTimeout, "very-secure3")
+	c := client.NewClient(serverIPPortPool, clientResponseTimeout, "very-secure3")
 	c.Listen(9001)
 
 	// seed some entries
@@ -171,11 +172,21 @@ See `server/server_test.go` for examples.
 
 ## High Availability / Failover
 
-Rudimentary and experimental HA is possible via replication by using the `-p` peers list and `-i` self IP:host pair flags such as: `dracula-server -p "127.0.0.1:3509,127.0.0.1:3519,127.0.0.1:3529" -i 127.0.0.1:3529`. All peers in the cluster are listed, as well as the self IP and host in the cluster. These flags tell the dracula server to replicate all PUT messages to peers.
+Rudimentary and experimental HA is possible via replication by using the `-p` peers list and `-i` self `IP:host` pair flags such as:
+```
+dracula-server -p "127.0.0.1:3509,127.0.0.1:3519,127.0.0.1:3529" -i 127.0.0.1:3529
+```
 
-In practice, replicatoin only meets the use case of short-lived, imperfectly consistent metrics. We run it behind HAProxy and recommend you do the same, though you could implement a wrapper on the client side as well.
+where clients can connect to the pool and maintain a list of `-i` servers:
+```
+dracula-cli -i "127.0.0.1:3509,127.0.0.1:3519,127.0.0.1:3529" [...more flags]
+```
 
-If you require exact replication across peers, this feature will not be tolerant to network partitioning and not meet your needs.
+All peers in the cluster are listed, as well as the self IP and host in the cluster. These flags tell the dracula server to replicate all PUT messages to peers.
+
+In practice, replication only meets the use case of short-lived, imperfectly consistent metrics.
+
+If you require exact replication across peers, this feature will not be tolerant to network partitioning and will not meet your needs.
 
 ## Limitations
 

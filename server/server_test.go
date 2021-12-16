@@ -18,7 +18,7 @@ func TestServer_Roundtrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := client.NewClient("127.0.0.1", 9000, time.Second, "")
+	c := client.NewClient("127.0.0.1:9000", time.Second, "")
 	c.DebugEnable("9001")
 	if err := c.Listen(9001); err != nil {
 		t.Fatal(err)
@@ -114,15 +114,15 @@ func TestServer_Replication(t *testing.T) {
 
 	// 2 clients
 
-	// listen to server 1
-	c1 := client.NewClient("127.0.0.1", 9010, time.Second, "asdf")
+	// client 1 listens to server 1 ONLY
+	c1 := client.NewClient("127.0.0.1:9010", time.Second, "asdf")
 	c1.DebugEnable("9001")
 	if err := c1.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
 
-	// listen to server 2
-	c2 := client.NewClient("127.0.0.1", 9020, time.Second, "asdf")
+	// client 2 creates server pool with only two servers
+	c2 := client.NewClient("127.0.0.1:9010,127.0.0.1:9020", time.Second, "asdf")
 	c2.DebugEnable("9002")
 	if err := c2.Listen(9002); err != nil {
 		t.Fatal(err)
@@ -130,15 +130,23 @@ func TestServer_Replication(t *testing.T) {
 
 	// set
 	c1.Put("default", "asdf")
+	// c2 should hit multiple pool servers
 	c2.Put("default", "asdf")
+	c2.Put("default", "asdf")
+	c2.Put("default", "asdf")
+	c2.Put("default", "asdf")
+	c2.Put("default", "asdf")
+	c2.Put("default", "jjj")
+	c2.Put("asdfasdf", "ppp")
 	time.Sleep(30 * time.Millisecond)
-	// check server 3 to see whether it got those
-	asdf := s3.store.Count("default", "asdf")
-	assert.Equal(t, 2, asdf)
+	// check server 3 to see whether it got those even though it didn't have any normal clients connected
+	assert.Equal(t, 6, s3.store.Count("default", "asdf"))
+	assert.Equal(t, 1, s3.store.Count("default", "jjj"))
+	assert.Equal(t, 1, s3.store.Count("asdfasdf", "ppp"))
 
 	// check servers 1 and 2 to make sure they didn't double count
-	assert.Equal(t, 2, s1.store.Count("default", "asdf"))
-	assert.Equal(t, 2, s2.store.Count("default", "asdf"))
+	assert.Equal(t, 6, s1.store.Count("default", "asdf"))
+	assert.Equal(t, 6, s2.store.Count("default", "asdf"))
 
 	// cleanup
 	if err := s1.Close(); err != nil {
@@ -167,14 +175,14 @@ func TestServer_MultipleClients(t *testing.T) {
 	}
 	defer s.Close()
 
-	c1 := client.NewClient("127.0.0.1", 9000, time.Second, "")
+	c1 := client.NewClient("127.0.0.1:9000", time.Second, "")
 	c1.DebugEnable("9001")
 	if err := c1.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
 	defer c1.Close()
 
-	c2 := client.NewClient("127.0.0.1", 9000, time.Second, "")
+	c2 := client.NewClient("127.0.0.1:9000", time.Second, "")
 	c2.DebugEnable("9002")
 	if err := c2.Listen(9002); err != nil {
 		t.Fatal(err)
@@ -295,7 +303,7 @@ func TestServer_HeavyConcurrency(t *testing.T) {
 
 	for cc := 0; cc < clientCount; cc++ {
 		port := 9001 + cc
-		_c := client.NewClient("127.0.0.1", 9000, time.Second*5, preSharedKey)
+		_c := client.NewClient("127.0.0.1:9000", time.Second*5, preSharedKey)
 		if err := _c.Listen(port); err != nil {
 			t.Fatal(err)
 		}
