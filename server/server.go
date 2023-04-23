@@ -26,6 +26,7 @@ var (
 
 type Server struct {
 	store             *store.Store
+	StoreMetrics      *store.Metrics
 	conn              *net.UDPConn
 	disposed          bool
 	preSharedKey      []byte
@@ -76,15 +77,17 @@ func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
 		panic(ErrExpiryTooSmall)
 	}
 	psk := []byte(preSharedKey)
-	s := &Server{
-		store:             store.NewStore(expireAfterSecs),
+	st := store.NewStore(expireAfterSecs)
+	serv := &Server{
+		store:             st,
+		StoreMetrics:      st.LastMetrics,
 		preSharedKey:      psk,
 		expireAfterSecs:   expireAfterSecs,
 		messageProcessing: make(chan *rawMessage, runtime.NumCPU()),
 		log:               log.New(os.Stdout, "", 0),
 	}
-	s.DebugDisable()
-	return s
+	serv.DebugDisable()
+	return serv
 }
 
 func (s *Server) DebugEnable(prefix string) {
