@@ -18,6 +18,7 @@ var (
 	peers           = flag.String("c", "", "Enable cluster replication. Peers must be comma-separated ip:port like `192.168.0.1:3509,192.168.0.2:3555`.")
 	verbose         = flag.Bool("v", false, "Verbose logging")
 	printVersion    = flag.Bool("version", false, "Print version")
+	promHostPort    = flag.String("prom", "", "Enable prometheus metrics. May cause pauses. Example: '0.0.0.0:9090'")
 )
 
 // Version should be replaced at build time
@@ -60,11 +61,18 @@ func main() {
 	}
 	err := s.Listen(*port)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Dracula startup listen error", err)
 		os.Exit(1)
 	}
 	if *verbose {
 		fmt.Println("will expire keys after", *expireAfterSecs, "seconds")
+	}
+	if *promHostPort != "" {
+		err = s.StoreMetrics.ListenAndServe(*promHostPort)
+		if err != nil {
+			fmt.Println("Prometheus startup listen error", *promHostPort, err)
+			os.Exit(1)
+		}
 	}
 
 	var wg sync.WaitGroup

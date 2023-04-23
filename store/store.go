@@ -3,14 +3,40 @@ package store
 import (
 	"github.com/emirpasic/gods/maps/hashmap"
 	"github.com/mailsac/dracula/store/tree"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"net/http"
 	"sync"
 	"time"
 )
 
 var runDuration = time.Second * 15
 
-// denominator of how many keys to garbage collect max on a run. if 3 then 1/3 or `<total keys>/3`
-const maxNamespacesDenom = 3
+// denominator of how many namespaces to garbage collect max on a run. if 3 then 1/3 or `<total keys>/3`
+const maxNamespacesDenom = 2
+
+type Metrics struct {
+	registry                          *prometheus.Registry
+	maxNamespacesDenom                prometheus.Gauge
+	namespacesTotalCount              prometheus.Gauge
+	namespacesGarbageCollected        prometheus.Gauge
+	keysRemainingInGCNamespaces       prometheus.Gauge
+	countTotalRemainingInGCNamespaces prometheus.Gauge
+	gcPauseTime                       prometheus.Gauge
+}
+
+func (m *Metrics) ListenAndServe(promHostPort string) error {
+	http.Handle(
+		"/metrics", promhttp.HandlerFor(
+			m.registry,
+			promhttp.HandlerOpts{
+				EnableOpenMetrics: true,
+			}),
+	)
+	// To test: curl -H 'Accept: application/openmetrics-text' localhost:8080/metrics
+	err := http.ListenAndServe(promHostPort, nil)
+	return err
+}
 
 // Store provides a way to store entries and count them based on namespaces.
 // Old entries are garbage collected in a way that attempts to not block for too long.
@@ -19,14 +45,52 @@ type Store struct {
 	namespaces            *hashmap.Map
 	expireAfterSecs       int64
 	cleanupServiceEnabled bool
+	LastMetrics           *Metrics
 }
 
 func NewStore(expireAfterSecs int64) *Store {
+	registry := prometheus.NewRegistry()
+	maxNamespacesDenomGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dracula_max_namespaces_denom",
+		Help: "Denominator/portion of namespaces to be garbage collected each cleanup run",
+	})
+	namespacesTotalCount := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dracula_namespaces_count",
+		Help: "Number of top level key namespaces",
+	})
+	namespacesGarbageCollected := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dracula_namespaces_gc_count",
+		Help: "Number of namespaces which had keys garbage collected during last cleanup run",
+	})
+	keysRemainingInGCNamespaces := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dracula_keys_in_gc_namespaces",
+		Help: "Count of unexpired keys in last garbage collected namespaces",
+	})
+	countTotalRemainingInGCNamespaces := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dracula_key_sum_in_gc_namespaces",
+		Help: "Count of key values in last garbed collected namespace valid keys",
+	})
+	gcPauseTime := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "dracula_gc_pause_millis",
+		Help: "How long last garbage collection took in milliseconds",
+	})
+	registry.MustRegister(maxNamespacesDenomGauge, namespacesTotalCount, namespacesGarbageCollected, keysRemainingInGCNamespaces, countTotalRemainingInGCNamespaces, gcPauseTime)
+
 	s := &Store{
 		expireAfterSecs: expireAfterSecs,
 		namespaces:      hashmap.New(),
+		LastMetrics: &Metrics{
+			registry:                          registry,
+			maxNamespacesDenom:                maxNamespacesDenomGauge,
+			namespacesTotalCount:              namespacesTotalCount,
+			namespacesGarbageCollected:        namespacesGarbageCollected,
+			keysRemainingInGCNamespaces:       keysRemainingInGCNamespaces,
+			countTotalRemainingInGCNamespaces: countTotalRemainingInGCNamespaces,
+			gcPauseTime:                       gcPauseTime,
+		},
 	}
 	s.cleanupServiceEnabled = true
+	s.LastMetrics.maxNamespacesDenom.Set(maxNamespacesDenom)
 
 	go s.runCleanup()
 
@@ -47,6 +111,8 @@ func (s *Store) runCleanup() {
 		return
 	}
 
+	start := time.Now()
+
 	defer time.AfterFunc(runDuration, s.runCleanup)
 
 	s.Lock()
@@ -54,10 +120,10 @@ func (s *Store) runCleanup() {
 	s.Unlock()
 
 	hashSize := len(keys)
-	if hashSize < 3 {
-		return
-	}
 	maxNamespaces := hashSize / maxNamespacesDenom
+
+	s.LastMetrics.namespacesTotalCount.Set(float64(hashSize))
+	s.LastMetrics.namespacesGarbageCollected.Set(float64(maxNamespaces))
 
 	subtrees := make(map[string]*tree.Tree)
 
@@ -80,9 +146,12 @@ func (s *Store) runCleanup() {
 	s.Unlock()
 
 	var subtreeKeys []string
+	var knownKeysCount int
+	var subtreeKeyTrackCount int
+	var tally int
 	for ns, subtree := range subtrees {
 		// Keys will cleanup every empty entry key
-		subtreeKeys, _ = subtree.Keys()
+		subtreeKeys, subtreeKeyTrackCount = subtree.Keys()
 		if len(subtreeKeys) == 0 {
 			// an empty subtree can be removed from the top level namespaces
 			s.Lock()
@@ -90,8 +159,13 @@ func (s *Store) runCleanup() {
 			s.Unlock()
 			continue
 		}
+		knownKeysCount += len(subtreeKeys)
+		tally += subtreeKeyTrackCount
 	}
 
+	s.LastMetrics.keysRemainingInGCNamespaces.Set(float64(knownKeysCount))
+	s.LastMetrics.countTotalRemainingInGCNamespaces.Set(float64(tally))
+	s.LastMetrics.gcPauseTime.Set(float64(time.Since(start).Milliseconds()))
 }
 
 func (s *Store) Put(ns, entryKey string) {

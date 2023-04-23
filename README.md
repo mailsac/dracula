@@ -170,6 +170,28 @@ Entries are grouped in a `namespace`.
 
 See `server/server_test.go` for examples.
 
+## Prometheus metrics
+
+Basic garbage collection metrics are exposed when using the server flag `--prom=0.0.0.0:9090` flag (you can use a custom host and port).
+
+```text
+# HELP dracula_key_sum_in_gc_namespaces Count of key values in last garbed collected namespace valid keys
+# TYPE dracula_key_sum_in_gc_namespaces gauge
+dracula_key_sum_in_gc_namespaces 0
+# HELP dracula_keys_in_gc_namespaces Count of unexpired keys in last garbage collected namespaces
+# TYPE dracula_keys_in_gc_namespaces gauge
+dracula_keys_in_gc_namespaces 0
+# HELP dracula_max_namespaces_denom Denominator/portion of namespaces to be garbage collected each cleanup run
+# TYPE dracula_max_namespaces_denom gauge
+dracula_max_namespaces_denom 3
+# HELP dracula_namespaces_count Number of top level key namespaces
+# TYPE dracula_namespaces_count gauge
+dracula_namespaces_count 3
+# HELP dracula_namespaces_gc_count Number of namespaces which had keys garbage collected during last cleanup run
+# TYPE dracula_namespaces_gc_count gauge
+dracula_namespaces_gc_count 1
+```
+
 ## High Availability / Failover
 
 Rudimentary and experimental HA is possible via replication by using the `-p` peers list and `-i` self `IP:host` pair flags such as:
@@ -219,7 +241,7 @@ See dependencies listed in go.mod for copyright notices and licenses.
 
 ----
 
-Copyright (c) 2021 Forking Software LLC
+Copyright (c) 2021-2023 Forking Software LLC
 
 | Project           | License SPDX Identifier |
 |-------------------|-------------------------|
