@@ -7,6 +7,7 @@ import (
 	"github.com/OneOfOne/xxhash"
 	"log"
 	"math"
+	"net"
 	"strings"
 )
 
@@ -20,7 +21,13 @@ const (
 	CmdPutReplicate   byte = 'R'
 	CmdCountNamespace byte = 'N'
 	CmdCountServer    byte = 'S'
-	ResError          byte = 'E'
+
+	CmdTCPOnlyKeys     byte = 'K'
+	CmdTCPOnlyValues   byte = 'V'
+	CmdTCPOnlyStore    byte = 'T'
+	CmdTCPOnlyRetrieve byte = 'V'
+
+	ResError byte = 'E'
 
 	space       byte = ' '
 	spaceIndex1      = 1
@@ -38,6 +45,8 @@ var (
 	ErrBadHash            = errors.New("auth failed: packet hash invalid")
 	ErrBadOutputSize      = errors.New("wrong data size during packet construction")
 )
+
+var StopSymbol = []byte("\n.\n")
 
 // IsRequestCmd indicates if the server should accept this as a command
 func IsRequestCmd(c byte) bool {
@@ -57,6 +66,8 @@ type Packet struct {
 	MessageID      uint32 // fixed 4 byte number
 	Namespace      []byte // fixed 64 byte string
 	DataValue      []byte // fixed 1419 byte string
+
+	RequestClient *net.TCPConn
 }
 
 // NewPacket is a friendlier way to construct a packet and will provide conversions inline
@@ -155,9 +166,9 @@ func ParsePacket(buf []byte) (*Packet, error) {
 	return &p, nil
 }
 
-// Bytes formats the packet for transport. The first 8 bytes are a header.
-// The last byte should be a line break. The data is a UTF-8 string.
-func (p *Packet) Bytes() ([]byte, error) {
+// bytes formats the packet for transport. The first 8 bytes are a header.
+//// The last byte should be a line break. The data is a UTF-8 string.
+func (p *Packet) bytes() []byte {
 	//fmt.Println("Bytes()       message id", p.MessageID, "|")
 	//fmt.Println("Bytes()       Namespace", p.Namespace, "|", len(p.Namespace))
 	if len(p.HashBytes) < 8 {
@@ -181,11 +192,24 @@ func (p *Packet) Bytes() ([]byte, error) {
 	out = append(out, namespace...)
 	out = append(out, ' ')
 	out = append(out, dataValue...)
+
+	return out
+}
+
+// Bytes formats the packet for UDP transport.
+func (p *Packet) Bytes() ([]byte, error) {
+	out := p.bytes()
 	if len(out) != PacketSize {
 		fmt.Println("packet size outputted was", len(out))
 		return nil, ErrBadOutputSize
 	}
 
+	return out, nil
+}
+
+// TCPBytes formats the packet for TCP transport.
+func (p *Packet) BytesTCP() ([]byte, error) {
+	out := p.bytes()
 	return out, nil
 }
 
@@ -219,7 +243,8 @@ func (p *Packet) Validate(preSharedKey []byte) error {
 	return nil
 }
 
-// padRight adds char space to make buffer reach desired size
+// padRight adds char space to make buffer reach desired size. If `in` is larger
+// than `finalSize`, nothing happens.
 func padRight(in *[]byte, finalSize int) *[]byte {
 	inputLen := len(*in)
 	if inputLen >= finalSize {

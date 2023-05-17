@@ -2,6 +2,8 @@ package tree
 
 import (
 	"github.com/emirpasic/gods/trees/avltree"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -72,6 +74,40 @@ func (n *Tree) Count(entryKey string) int {
 	count := len(*datesSecs)
 	n.tree.Put(entryKey, *datesSecs)
 	return count
+}
+
+// KeyMatch crawls the subtree to return keys starting with the `keyPattern` string.
+func (n *Tree) KeyMatch(keyPattern string) []string {
+	var out []string
+	var wg sync.WaitGroup
+	re, err := regexp.Compile(strings.ReplaceAll(keyPattern, "*", "(^|$|.+)"))
+	if err != nil {
+		return []string{err.Error()}
+	}
+
+	wg.Add(1)
+	go func() {
+		iterator := n.tree.Iterator()
+		var k string
+		var kOk bool
+		existed := iterator.Next()
+		for existed {
+			k, kOk = iterator.Key().(string)
+			if !kOk {
+				break
+			}
+			existed = iterator.Next()
+			if re.MatchString(k) {
+				if n.Count(k) > 0 {
+					out = append(out, k)
+				}
+			}
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+
+	return out
 }
 
 func (n *Tree) Put(entryKey string) {

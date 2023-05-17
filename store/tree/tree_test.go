@@ -2,6 +2,7 @@ package tree
 
 import (
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"testing"
 	"time"
 )
@@ -77,4 +78,74 @@ func TestTree_Count(t *testing.T) {
 		assert.Equal(t, 0, len(keys), "Keys() should expire keys")
 		assert.Equal(t, 0, entryCount, "Keys() should expire entries")
 	})
+}
+
+func TestTree_KeyMatch(t *testing.T) {
+	t.Run("returns only matches for a keyPattern", func(t *testing.T) {
+		tr := NewTree(60)
+
+		// we only put one key, but multiple counts
+		tr.Put("asdf")
+		tr.Put("asdf")
+		tr.Put("asdf")
+
+		tr.Put("a:sdf")
+		tr.Put("a")
+		tr.Put("a:")
+
+		tr.Put("mn:blah")
+		tr.Put("na:blahblah")
+		tr.Put("bla")
+
+		tr.Put("a:elvis:5")
+		tr.Put("b:elvis:8:elvis")
+		tr.Put("e:elvis")
+		tr.Put("c:elvis:1")
+
+		// curveballs
+		tr.Put("") // doesn't work
+		tr.Put(".+")
+		tr.Put("nil")
+
+		assert.Equal(t, 3, len(tr.KeyMatch("^a:*")))
+
+		m := tr.KeyMatch("*bla*")
+		assert.Equalf(t, 3, len(m), "%+v", m)
+
+		assert.ElementsMatch(t, []string{"a:elvis:5", "b:elvis:8:elvis", "e:elvis", "c:elvis:1"}, tr.KeyMatch("*elvis*"))
+
+		// everything
+		all := tr.KeyMatch("*")
+		assert.Equalf(t, 14, len(all), "%+v", all)
+	})
+	t.Run("it does not crash when empty", func(t *testing.T) {
+		tr := NewTree(5)
+
+		assert.Equal(t, 0, len(tr.KeyMatch("asdf")))
+	})
+	t.Run("it does not return the key when all its values are expired", func(t *testing.T) {
+		tr := NewTree(1)
+		tr.Put("a")
+		tr.tree.Put("a", []string{})
+
+		tr.Put("cdbe")
+		tr.Put("cd:aa")
+
+		result := tr.KeyMatch("cd")
+		assert.ElementsMatch(t, []string{"cdbe", "cd:aa"}, result)
+
+	})
+	t.Run("works with a huge tree", func(t *testing.T) {
+		charset := "abcdefghijklmnopqrstuvwxyz"
+
+		tr := NewTree(10)
+		for i := 0; i < 100_000; i++ {
+			tr.Put(
+				string(charset[rand.Intn(len(charset))]) +
+					string(charset[rand.Intn(len(charset))]) +
+					string(charset[rand.Intn(len(charset))]))
+		}
+		assert.NotEmpty(t, tr.KeyMatch("a"))
+	})
+
 }

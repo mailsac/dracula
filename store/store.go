@@ -68,7 +68,7 @@ func NewStore(expireAfterSecs int64) *Store {
 	})
 	countTotalRemainingInGCNamespaces := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dracula_key_sum_in_gc_namespaces",
-		Help: "Count of key values in last garbed collected namespace valid keys",
+		Help: "Count of key values in last garbage collected namespace valid keys",
 	})
 	gcPauseTime := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "dracula_gc_pause_millis",
@@ -210,6 +210,20 @@ func (s *Store) CountEntries(ns string) int {
 
 	_, count := subtree.Keys()
 	return count
+}
+
+// KeyMatch crawls the subtree to return keys containing keyPattern string.
+func (s *Store) KeyMatch(ns string, keyPattern string) []string {
+	s.Lock()
+	subtreeI, found := s.namespaces.Get(ns)
+	s.Unlock()
+
+	if !found {
+		return []string{}
+	}
+	subtree := subtreeI.(*tree.Tree)
+
+	return subtree.KeyMatch(keyPattern)
 }
 
 // CountServerEntries returns the count of all entries for the entire server.

@@ -128,6 +128,7 @@ func (c *Client) Close() error {
 			return err
 		}
 	}
+	// TODO: close down tcp client server
 
 	return nil
 }
