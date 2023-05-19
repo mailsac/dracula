@@ -93,9 +93,20 @@ make build-cli
 
 ./dracula-cli -put -k asdf
 ./dracula-cli -put -k asdf
+./dracula-cli -put -k asdfjkl
+./dracula-cli -put -k jkl
 
 ./dracula-cli -count -k asdf
 # > 2
+
+./dracula-cli -keys -k "a*"
+# > 1) asdf
+# > 2) asdfjkl
+
+./dracula-cli -keys -k "a*"
+# > 1) asdf
+# > 2) asdfjkl
+# > 3) jkl
 ```
 
 Keys can be namespaced with the `-n` flag.
@@ -144,7 +155,12 @@ var (
 )
 
 func main() {
-	c := client.NewClient(serverIPPortPool, clientResponseTimeout, "very-secure3")
+	c := client.NewClient(client.Config{
+		RemoteUDPIPPortList: serverIPPortPool, 
+		RemoteTCPIPPortList: serverIPPortPool, 
+		Timeout: clientResponseTimeout, 
+		PreSharedSecret: "very-secure3",
+    })
 	c.Listen(9001)
 
 	// seed some entries
@@ -216,7 +232,7 @@ Messages are sent over UDP and not reliable. The trade-off desired is speed. Thi
 be a throttling server, so missing a few messages wasn't a big deal. Also, UDP can cause TCP traffic on the same box to
 be slower under heavy load. This was ideal for our use-case, but may not be for yours.
 
-A message is limited to 1500 bytes. See `protocol/` for exactly how messages are parsed.
+A UDP message is limited to 1500 bytes. See `protocol/` for exactly how messages are parsed.
 
 The namespace can be 64 bytes and the data value can be 1419 bytes.
 
@@ -227,11 +243,10 @@ is running in a trusted environment.
 
 ## Roadmap
 
-- Persistence
+- Persistence and value storage
 - Better support for high availability under network partitions 
 - Clients in other languages
 - Retries
-- Pipelining
 
 Please open an Issue to request a feature.
 
