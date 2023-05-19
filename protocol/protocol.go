@@ -25,8 +25,9 @@ const (
 	CmdTCPOnlyKeys     byte = 'K'
 	CmdTCPOnlyValues   byte = 'V'
 	CmdTCPOnlyStore    byte = 'T'
-	CmdTCPOnlyRetrieve byte = 'V'
+	CmdTCPOnlyRetrieve byte = 'I'
 
+	// ResError is a Cmd
 	ResError byte = 'E'
 
 	space       byte = ' '
@@ -37,13 +38,14 @@ const (
 )
 
 var (
-	ErrInvalidPacketSize  = errors.New("bad packet: size must be 1500 bytes")
-	ErrInvalidCommandByte = errors.New("bad packet: invalid command byte")
-	ErrProtocolSpace1     = errors.New("bad packet: expected space 1")
-	ErrProtocolSpace2     = errors.New("bad packet: expected space 1")
-	ErrProtocolSpace3     = errors.New("bad packet: expected space 3")
-	ErrBadHash            = errors.New("auth failed: packet hash invalid")
-	ErrBadOutputSize      = errors.New("wrong data size during packet construction")
+	ErrInvalidPacketSizeTooSmall = errors.New("bad packet: too small, size must be 1500 bytes")
+	ErrInvalidPacketSizeTooLarge = errors.New("bad packet: too large, size must be 1500 bytes")
+	ErrInvalidCommandByte        = errors.New("bad packet: invalid command byte")
+	ErrProtocolSpace1            = errors.New("bad packet: expected space 1")
+	ErrProtocolSpace2            = errors.New("bad packet: expected space 1")
+	ErrProtocolSpace3            = errors.New("bad packet: expected space 3")
+	ErrBadHash                   = errors.New("auth failed: packet hash invalid")
+	ErrBadOutputSize             = errors.New("wrong data size during packet construction")
 )
 
 var StopSymbol = []byte("\n.\n")
@@ -51,6 +53,10 @@ var StopSymbol = []byte("\n.\n")
 // IsRequestCmd indicates if the server should accept this as a command
 func IsRequestCmd(c byte) bool {
 	return c == CmdCount || c == CmdPut || c == CmdCountNamespace || c == CmdCountServer || c == CmdPutReplicate
+}
+
+func IsTcpOnlyCmd(c byte) bool {
+	return c == CmdTCPOnlyKeys || c == CmdTCPOnlyRetrieve || c == CmdTCPOnlyValues || c == CmdTCPOnlyStore
 }
 
 // IsResponseCmd indicates if the client should accept this as a command
@@ -84,8 +90,8 @@ func NewPacketFromParts(command byte, messageID, namespace, dataValue, preShared
 		Command:        command,
 		MessageID:      Uint32FromBytes(messageID),
 		MessageIDBytes: messageID,
-		Namespace:      *padRight(&namespace, NamespaceSize),
-		DataValue:      *padRight(&dataValue, DataValueSize),
+		Namespace:      *PadRight(&namespace, NamespaceSize),
+		DataValue:      *PadRight(&dataValue, DataValueSize),
 	}
 	p.SetHash(preSharedKey)
 	return p
@@ -113,7 +119,7 @@ func (p *Packet) DataValueString() string {
 func ParsePacket(buf []byte) (*Packet, error) {
 	// if not meeting minimum packet size where we, cannot parse packet below
 	if len(buf) < spaceIndex4+2 {
-		return nil, ErrInvalidPacketSize
+		return nil, ErrInvalidPacketSizeTooSmall
 	}
 	hBytes := buf[spaceIndex1+1 : spaceIndex2]
 	idBytes := buf[spaceIndex2+1 : spaceIndex3]
@@ -121,7 +127,7 @@ func ParsePacket(buf []byte) (*Packet, error) {
 	// allows shorter packet to be turned into 1500 byte total packet
 	endAt := int(math.Min(float64(len(buf)), PacketSize))
 	messageIData := buf[spaceIndex4+1 : endAt]
-	rightSizeData := *padRight(&messageIData, DataValueSize)
+	rightSizeData := *PadRight(&messageIData, DataValueSize)
 	p := Packet{
 		Command: buf[0], // then a space
 
@@ -136,11 +142,7 @@ func ParsePacket(buf []byte) (*Packet, error) {
 		DataValue: rightSizeData,
 	}
 
-	if len(buf) != PacketSize {
-		return &p, ErrInvalidPacketSize
-	}
-
-	commandIsValid := IsRequestCmd(p.Command) || IsResponseCmd(p.Command)
+	commandIsValid := IsRequestCmd(p.Command) || IsResponseCmd(p.Command) || IsTcpOnlyCmd(p.Command)
 	if !commandIsValid {
 		return &p, ErrInvalidCommandByte
 	}
@@ -163,6 +165,10 @@ func ParsePacket(buf []byte) (*Packet, error) {
 		return &p, ErrProtocolSpace3
 	}
 
+	if len(buf) > PacketSize && !IsTcpOnlyCmd(p.Command) {
+		return &p, ErrInvalidPacketSizeTooLarge
+	}
+
 	return &p, nil
 }
 
@@ -178,8 +184,8 @@ func (p *Packet) bytes() []byte {
 		panic("Packet.Bytes() called without MessageIDBytes!")
 	}
 
-	namespace := *padRight(&p.Namespace, NamespaceSize)
-	dataValue := *padRight(&p.DataValue, DataValueSize)
+	namespace := *PadRight(&p.Namespace, NamespaceSize)
+	dataValue := *PadRight(&p.DataValue, DataValueSize)
 
 	out := []byte{
 		p.Command,
@@ -196,20 +202,15 @@ func (p *Packet) bytes() []byte {
 	return out
 }
 
-// Bytes formats the packet for UDP transport.
+// Bytes formats the packet for transport. If the outputted size is wrong for UDP, it will
+// return the packet an allow the client to perhaps truncate.
 func (p *Packet) Bytes() ([]byte, error) {
 	out := p.bytes()
-	if len(out) != PacketSize {
-		fmt.Println("packet size outputted was", len(out))
-		return nil, ErrBadOutputSize
+	if len(out) != PacketSize && !IsTcpOnlyCmd(p.Command) {
+		fmt.Println("packet size outputted was", len(out), string(p.Command))
+		return out, ErrBadOutputSize
 	}
 
-	return out, nil
-}
-
-// TCPBytes formats the packet for TCP transport.
-func (p *Packet) BytesTCP() ([]byte, error) {
-	out := p.bytes()
 	return out, nil
 }
 
@@ -243,9 +244,9 @@ func (p *Packet) Validate(preSharedKey []byte) error {
 	return nil
 }
 
-// padRight adds char space to make buffer reach desired size. If `in` is larger
+// PadRight adds char space to make buffer reach desired size. If `in` is larger
 // than `finalSize`, nothing happens.
-func padRight(in *[]byte, finalSize int) *[]byte {
+func PadRight(in *[]byte, finalSize int) *[]byte {
 	inputLen := len(*in)
 	if inputLen >= finalSize {
 		return in // not copied if already correct size

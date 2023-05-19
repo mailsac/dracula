@@ -75,7 +75,7 @@ func TestParsePacketSizeTooLarge(t *testing.T) {
 	assert.Equal(t, 1525, len(b)) // pre check
 
 	packet, err = ParsePacket(b)
-	assert.Error(t, ErrInvalidPacketSize, err)
+	assert.Error(t, ErrInvalidPacketSizeTooLarge, err)
 	assert.Equal(t, DataValueSize, len(packet.DataValue),
 		"should have still parsed packet and dropped bytes")
 }
@@ -91,7 +91,7 @@ func TestParsePacketSizeTooSmall(t *testing.T) {
 	assert.Equal(t, 1300, len(b)) // pre check
 
 	packet, err = ParsePacket(b)
-	assert.Error(t, ErrInvalidPacketSize, err)
+	assert.Error(t, ErrInvalidPacketSizeTooSmall, err)
 	assert.Equal(t, DataValueSize, len(packet.DataValue),
 		"should have still parsed packet padded end bytes")
 
@@ -99,6 +99,6 @@ func TestParsePacketSizeTooSmall(t *testing.T) {
 
 	tinyBytePacket := []byte{'C', 99, ' ', 'a', 'b', 'c', ' ', 'd', 'e', 'f'}
 	tinyPacket, err := ParsePacket(tinyBytePacket)
-	assert.Error(t, ErrInvalidPacketSize)
+	assert.Error(t, ErrInvalidPacketSizeTooSmall)
 	assert.Nil(t, tinyPacket)
 }

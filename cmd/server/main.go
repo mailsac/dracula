@@ -12,7 +12,8 @@ import (
 var (
 	help            = flag.Bool("h", false, "Print this help")
 	expireAfterSecs = flag.Int64("t", 60, "TTL secs - entries will expire after this many seconds")
-	port            = flag.Int("p", 3509, "Port this server will run on")
+	port            = flag.Int("p", 3509, "UDP this server will run on")
+	tcpPort         = flag.Int("tcp", 3509, "TCP port this server will run on")
 	secret          = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
 	peerIPPort      = flag.String("i", "", "Self peer IP and host like 192.168.0.1:3509 to identify self in the cluster")
 	peers           = flag.String("c", "", "Enable cluster replication. Peers must be comma-separated ip:port like `192.168.0.1:3509,192.168.0.2:3555`.")
@@ -57,9 +58,9 @@ func main() {
 		s = server.NewServer(*expireAfterSecs, preSharedSecret)
 	}
 	if *verbose {
-		s.DebugEnable(fmt.Sprintf("%d", *port))
+		s.DebugEnable(fmt.Sprintf("udp:%d, tcp:%d", *port, *tcpPort))
 	}
-	err := s.Listen(*port)
+	err := s.Listen(*port, *tcpPort)
 	if err != nil {
 		fmt.Println("Dracula startup listen error", err)
 		os.Exit(1)

@@ -46,6 +46,7 @@ type Store struct {
 	expireAfterSecs       int64
 	cleanupServiceEnabled bool
 	LastMetrics           *Metrics
+	lastGCdNamespaces     map[string]bool
 }
 
 func NewStore(expireAfterSecs int64) *Store {
@@ -125,22 +126,28 @@ func (s *Store) runCleanup() {
 	s.LastMetrics.namespacesTotalCount.Set(float64(hashSize))
 	s.LastMetrics.namespacesGarbageCollected.Set(float64(maxNamespaces))
 
-	subtrees := make(map[string]*tree.Tree)
+	nsSubtrees := make(map[string]*tree.Tree)
+	crawledKeys := make(map[string]bool)
 
 	s.Lock()
 	{
-		// pointers to some the subtrees are fetched from
+		// pointers to some the subtrees are fetched
 		var ns string
 		var found bool
 		var subtreeI interface{}
+		var crawledLast bool
 
 		for i := 0; i < maxNamespaces; i++ {
 			ns = keys[i].(string)
+			_, crawledLast = s.lastGCdNamespaces[ns]
+			if crawledLast {
+				continue
+			}
 			subtreeI, found = s.namespaces.Get(ns)
 			if !found {
 				continue
 			}
-			subtrees[ns] = subtreeI.(*tree.Tree)
+			nsSubtrees[ns] = subtreeI.(*tree.Tree)
 		}
 	}
 	s.Unlock()
@@ -149,9 +156,12 @@ func (s *Store) runCleanup() {
 	var knownKeysCount int
 	var subtreeKeyTrackCount int
 	var tally int
-	for ns, subtree := range subtrees {
+	for ns, subtree := range nsSubtrees {
 		// Keys will cleanup every empty entry key
 		subtreeKeys, subtreeKeyTrackCount = subtree.Keys()
+		knownKeysCount += len(subtreeKeys)
+		tally += subtreeKeyTrackCount
+
 		if len(subtreeKeys) == 0 {
 			// an empty subtree can be removed from the top level namespaces
 			s.Lock()
@@ -159,9 +169,11 @@ func (s *Store) runCleanup() {
 			s.Unlock()
 			continue
 		}
-		knownKeysCount += len(subtreeKeys)
-		tally += subtreeKeyTrackCount
+		crawledKeys[ns] = true
 	}
+
+	// set these here to skip them on the next garbage collection
+	s.lastGCdNamespaces = crawledKeys
 
 	s.LastMetrics.keysRemainingInGCNamespaces.Set(float64(knownKeysCount))
 	s.LastMetrics.countTotalRemainingInGCNamespaces.Set(float64(tally))

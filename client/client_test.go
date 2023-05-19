@@ -16,13 +16,13 @@ func TestClient_Auth(t *testing.T) {
 	secret := "asdf-jkl-HOHOHO!"
 	s := server.NewServer(60, secret)
 	s.DebugEnable("9000")
-	err := s.Listen(9000)
+	err := s.Listen(9000, 9000)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 
-	goodClient := NewClient("127.0.0.1:9000", 5, secret)
+	goodClient := NewClient(Config{RemoteUDPIPPortList: "127.0.0.1:9000", Timeout: 5, PreSharedKey: secret})
 	goodClient.DebugEnable("9001")
 	err = goodClient.Listen(9001)
 	if err != nil {
@@ -30,8 +30,8 @@ func TestClient_Auth(t *testing.T) {
 	}
 	defer goodClient.Close()
 
-	// START with good secret so it can connect to server in pool, then switch to bad later
-	badClient := NewClient("127.0.0.1:9000", 5, secret)
+	// START with good secret so it can connect to server in udpPool, then switch to bad later
+	badClient := NewClient(Config{RemoteUDPIPPortList: "127.0.0.1:9000", Timeout: 5, PreSharedKey: secret})
 	err = badClient.Listen(9002)
 	if err != nil {
 		t.Fatal(err)
@@ -41,6 +41,7 @@ func TestClient_Auth(t *testing.T) {
 
 	// good client checks
 	err = goodClient.Put("asdf", "99.33.22.44")
+	err = goodClient.Put("asdf", "99.33.22.44")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,14 +50,12 @@ func TestClient_Auth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c != 1 {
-		t.Error("expected pre check count=1, got=", c)
-	}
+	assert.Equal(t, 2, c)
 
 	// bad client checks, put same and count same
 
 	// pre-check
-	assert.Equal(t, "[127.0.0.1:9000]", badClient.pool.ListHealthy())
+	assert.Equal(t, "[127.0.0.1:9000]", badClient.udpPool.ListHealthy())
 	// change to BAD secret!
 	badClient.preSharedKey = []byte("Brute-Force9")
 	err = badClient.Put("asdf", "99.33.22.44")
@@ -67,7 +66,7 @@ func TestClient_Auth(t *testing.T) {
 func TestClient_Healthcheck(t *testing.T) {
 	s1 := server.NewServer(60, "sec1")
 	s1.DebugEnable("9000")
-	err := s1.Listen(9000)
+	err := s1.Listen(9000, 9000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,27 +74,27 @@ func TestClient_Healthcheck(t *testing.T) {
 
 	s2 := server.NewServer(60, "sec1")
 	s2.DebugEnable("9100")
-	err = s2.Listen(9100)
+	err = s2.Listen(9100, 9010)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s2.Close()
 
-	c1 := NewClient("127.0.0.1:9000,127.0.0.1:9100,127.0.0.1:99999", 5, "sec1")
-	c1.pool.Debug = true
+	c1 := NewClient(Config{RemoteUDPIPPortList: "127.0.0.1:9000,127.0.0.1:9100,127.0.0.1:99999", Timeout: 5, PreSharedKey: "sec1"})
+	c1.udpPool.Debug = true
 	c1.DebugEnable("9001")
 	err = c1.Listen(9001)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c1.Close()
-	assert.Equal(t, "[127.0.0.1:9000 127.0.0.1:9100 127.0.0.1:99999]", c1.pool.ListServers(), "did not parse servers correctly")
-	assert.Equal(t, "[127.0.0.1:9000 127.0.0.1:9100]", c1.pool.ListHealthy())
-	assert.Equal(t, "[127.0.0.1:99999]", c1.pool.ListUnHealthy())
+	assert.Equal(t, "[127.0.0.1:9000 127.0.0.1:9100 127.0.0.1:99999]", c1.udpPool.ListServers(), "did not parse servers correctly")
+	assert.Equal(t, "[127.0.0.1:9000 127.0.0.1:9100]", c1.udpPool.ListHealthy())
+	assert.Equal(t, "[127.0.0.1:99999]", c1.udpPool.ListUnHealthy())
 }
 
 func TestClient_messageIDOverflow(t *testing.T) {
-	cl := NewClient("127.0.0.1:9000", time.Second*5, "")
+	cl := NewClient(Config{RemoteUDPIPPortList: "127.0.0.1:9000", Timeout: time.Second * 5})
 	cl.messageIDCounter = math.MaxUint32 - 1
 	actual := protocol.Uint32FromBytes(cl.makeMessageID())
 	assert.Equal(t, uint32(math.MaxUint32), actual)
@@ -106,7 +105,7 @@ func TestClient_messageIDOverflow(t *testing.T) {
 }
 
 func TestClient_messageIDThreadSafe(t *testing.T) {
-	cl := NewClient("127.0.0.1:9000", time.Second*5, "")
+	cl := NewClient(Config{RemoteUDPIPPortList: "127.0.0.1:9000", Timeout: time.Second * 5})
 	var wg sync.WaitGroup
 	const expected uint32 = 5001
 
@@ -125,4 +124,42 @@ func TestClient_messageIDThreadSafe(t *testing.T) {
 	wg.Wait()
 	actual := protocol.Uint32FromBytes(cl.makeMessageID())
 	assert.Equal(t, expected, actual)
+}
+
+func TestClient_TcpKeyMatch(t *testing.T) {
+	t.Run("returns ordered keys with secret", func(t *testing.T) {
+		secret := "asdf-!!?!|asdf"
+		s := server.NewServer(60, secret)
+		s.DebugEnable("9000")
+		err := s.Listen(9000, 9000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		cl := NewClient(Config{RemoteUDPIPPortList: "127.0.0.1:9000", RemoteTCPIPPortList: "127.0.0.1:9000", Timeout: time.Second * 5, PreSharedKey: secret})
+		assert.NoError(t, cl.Listen(9001))
+		defer cl.Close()
+
+		assert.NoError(t, cl.Put("default", "blah"))
+		assert.NoError(t, cl.Put("default", "blat"))
+		assert.NoError(t, cl.Put("default", "blah:ce")) // out of order
+		assert.NoError(t, cl.Put("default", "blah:2"))
+		assert.NoError(t, cl.Put("default", "blah:a"))
+		assert.NoError(t, cl.Put("default", "blaM!"))    // no match
+		assert.NoError(t, cl.Put("other", "blah:other")) // other namespace
+
+		matched, err := cl.KeyMatch("default", "blah*")
+		assert.NoError(t, err)
+		assert.ElementsMatch(t, []string{"blah", "blah:2", "blah:a", "blah:ce"}, matched)
+
+		// use the pool a bit
+		matched, err = cl.KeyMatch("other", "blah*")
+		assert.NoError(t, err)
+		assert.ElementsMatch(t, []string{"blah:other"}, matched)
+
+		matched, err = cl.KeyMatch("notexisting", "blah*")
+		assert.NoError(t, err)
+		assert.ElementsMatch(t, []string{}, matched)
+	})
 }

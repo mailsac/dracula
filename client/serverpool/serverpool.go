@@ -17,6 +17,7 @@ type Healthchecker interface {
 	Healthcheck(specificServer *net.UDPAddr) error
 }
 
+// Pool is a UDP server pool with healthchecking
 type Pool struct {
 	sync.Mutex
 	checker   Healthchecker

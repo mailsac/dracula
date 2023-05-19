@@ -1,12 +1,10 @@
 package server
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"github.com/mailsac/dracula/protocol"
+	"github.com/mailsac/dracula/server/rawmessage"
 	"github.com/mailsac/dracula/store"
-	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -15,7 +13,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 const MinimumExpirySecs = 2
@@ -36,15 +33,9 @@ type Server struct {
 	disposed          bool
 	preSharedKey      []byte
 	expireAfterSecs   int64
-	messageProcessing chan *RawMessage
+	messageProcessing chan *rawmessage.RawMessage
 	peers             []net.UDPAddr
 	log               *log.Logger
-}
-
-type RawMessage struct {
-	message        []byte
-	remote         *net.UDPAddr
-	maybeTcpClient *net.TCPConn
 }
 
 func NewServerWithPeers(expireAfterSecs int64, preSharedKey, selfPeerHostPort, peerStringList string) *Server {
@@ -89,7 +80,7 @@ func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
 		StoreMetrics:      st.LastMetrics,
 		preSharedKey:      psk,
 		expireAfterSecs:   expireAfterSecs,
-		messageProcessing: make(chan *RawMessage, runtime.NumCPU()),
+		messageProcessing: make(chan *rawmessage.RawMessage, runtime.NumCPU()),
 		log:               log.New(os.Stdout, "", 0),
 	}
 	serv.DebugDisable()
@@ -105,7 +96,7 @@ func (s *Server) DebugDisable() {
 	s.log.SetOutput(ioutil.Discard)
 }
 
-func (s *Server) Listen(udpPort int) error {
+func (s *Server) Listen(udpPort, tcpPort int) error {
 	if s.conn != nil {
 		return ErrServerAlreadyInit
 	}
@@ -119,7 +110,7 @@ func (s *Server) Listen(udpPort int) error {
 	s.conn = conn
 
 	tcpConn, err := net.ListenTCP("tcp", &net.TCPAddr{
-		Port: udpPort,
+		Port: tcpPort,
 		IP:   net.ParseIP("0.0.0.0"),
 	})
 	if err != nil {
@@ -132,7 +123,7 @@ func (s *Server) Listen(udpPort int) error {
 	s.setupWorkers(runtime.NumCPU()) // as many workers as buffer size of channel
 
 	go s.readUDPFrames()
-	go s.ReadTCPFrames(s.messageProcessing)
+	go s.ReadTCPFrames()
 	return nil
 }
 
@@ -141,15 +132,17 @@ func (s *Server) Close() error {
 		return nil
 	}
 	s.disposed = true
+
 	s.store.DisableCleanup()
 	close(s.messageProcessing)
-	err := s.conn.Close()
-	if err != nil {
-		return err
+	udpErr := s.conn.Close()
+	tcpErr := s.tcpConn.Close()
+
+	if udpErr != nil {
+		return udpErr
 	}
-	err = s.tcpConn.Close()
-	if err != nil {
-		return err
+	if tcpErr != nil {
+		return tcpErr
 	}
 	return nil
 }
@@ -162,74 +155,45 @@ func (s *Server) readUDPFrames() {
 		message := make([]byte, protocol.PacketSize)
 		_, remote, err := s.conn.ReadFromUDP(message[:])
 		if err != nil {
-			s.log.Println("server read error:", err)
+			s.log.Println("server udp read error:", err)
 			continue
 		}
-		s.messageProcessing <- &RawMessage{message: message, remote: remote}
+		s.messageProcessing <- &rawmessage.RawMessage{Message: message, Remote: remote}
 	}
 }
 
 // ReadTCPFrames can be used by a dracula server OR client to accept and handle TCP connections,
 // reading the protocol frames and passing them to a channel for processing.
-func (s *Server) ReadTCPFrames(sendToChannel chan *RawMessage) {
+func (s *Server) ReadTCPFrames() {
 	for {
 		if s.disposed {
 			break
 		}
 		conn, err := s.tcpConn.AcceptTCP()
 		if err != nil {
-			s.log.Println("server TCP accept error:", err)
+			s.log.Println("server tcp accept error:", err)
 			continue
 		}
-		go s.HandleTCPConnection(sendToChannel, conn)
+		go s.handleTCPConnection(conn)
 	}
 }
 
-// HandleTCPConnection can be used for the client or server
-func (s *Server) HandleTCPConnection(sendToChannel chan *RawMessage, conn *net.TCPConn) {
+func (s *Server) handleTCPConnection(conn *net.TCPConn) {
 	defer conn.Close()
-	reader := bufio.NewReader(conn)
+	var err error
 	for {
-		// read lines until full message is buffered - buffer lives only in this loop
-		message, err := reader.ReadBytes('\n')
+		err = rawmessage.ReadOneTcpMessage(s.log, s.messageProcessing, conn)
 		if err != nil {
-			if err != io.EOF {
-				s.log.Println("server TCP read error:", err)
-			}
 			break
 		}
-
-		// remove spaces and line breaks from the front
-		message = bytes.TrimLeftFunc(message, unicode.IsSpace)
-
-		// Check if the message ends with stop symbol i.e., it's a complete message.
-		// If not, keep reading until we find a complete message.
-		for !bytes.HasSuffix(message, protocol.StopSymbol) {
-			line, err := reader.ReadBytes('\n')
-			if err != nil {
-				s.log.Println("server TCP read error:", err)
-				break
-			}
-			message = append(message, line...)
-		}
-
-		// now remove stop symbol
-		message = bytes.TrimRightFunc(message, unicode.IsSpace)
-
-		tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
-		sendToChannel <- &RawMessage{
-			message:        message,
-			remote:         &net.UDPAddr{IP: tcpAddr.IP, Port: tcpAddr.Port},
-			maybeTcpClient: conn,
-		}
 	}
 }
 
-func (s *Server) worker(messages <-chan *RawMessage) {
+func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 	for m := range messages {
-		message := m.message
-		remote := m.remote
-		maybeTcpClient := m.maybeTcpClient
+		message := m.Message
+		remote := m.Remote
+		maybeTcpClient := m.MaybeTcpClient
 		packet, err := protocol.ParsePacket(message)
 		if maybeTcpClient != nil {
 			packet.RequestClient = maybeTcpClient
@@ -238,14 +202,15 @@ func (s *Server) worker(messages <-chan *RawMessage) {
 		var resPacket *protocol.Packet
 		respond := func() {
 			if packet.RequestClient != nil {
-				s.respondOrLogErrorTCP(packet)
+				resPacket.RequestClient = packet.RequestClient
+				s.respondOrLogErrorTCP(resPacket)
 				return
 			}
 			s.respondOrLogError(remote, resPacket)
 		}
 
 		if err != nil {
-			s.log.Println("server received BAD packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
+			s.log.Println("server received BAD packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString(), err)
 			resPacket = protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte(err.Error()), s.preSharedKey)
 			respond()
 			continue
@@ -302,8 +267,11 @@ func (s *Server) worker(messages <-chan *RawMessage) {
 			respond()
 			break
 		case protocol.CmdTCPOnlyKeys:
-			matchedKeys := s.store.KeyMatch(string(packet.Namespace), packet.DataValueString())
+			matchedKeys := s.store.KeyMatch(packet.NamespaceString(), packet.DataValueString())
+			s.log.Println("KeyMatch", packet.NamespaceString(), packet.DataValueString(), matchedKeys)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdTCPOnlyKeys, packet.MessageIDBytes, packet.Namespace, []byte(strings.Join(matchedKeys, "\n")), s.preSharedKey)
+			respond()
+			break
 		default:
 			resPacket = protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte("unknown_command_"+string(packet.Command)), s.preSharedKey)
 			respond()
@@ -357,9 +325,9 @@ func (s *Server) respondOrLogError(addr *net.UDPAddr, packet *protocol.Packet) {
 func (s *Server) respondOrLogErrorTCP(packet *protocol.Packet) {
 	s.log.Println("server sending tcp res:", packet.RequestClient, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 	packet.DataValue = append(packet.DataValue, protocol.StopSymbol...)
-	b, err := packet.BytesTCP()
-	if err != nil {
-		log.Println("server error: constructing tcp res", packet.RequestClient, err, packet)
+	b, err := packet.Bytes()
+	if err != nil && err != protocol.ErrBadOutputSize {
+		log.Println("server error: constructing tcp res", packet.RequestClient, err, "|", string(b), "|")
 		return
 	}
 	_, err = packet.RequestClient.Write(b)

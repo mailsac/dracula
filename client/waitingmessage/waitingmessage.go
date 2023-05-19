@@ -14,6 +14,7 @@ var (
 	cleanupEveryDefault = time.Second * 10
 )
 
+// Callback receives a raw message
 type Callback func([]byte, error)
 
 type waitingMessage struct {

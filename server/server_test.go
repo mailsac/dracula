@@ -14,11 +14,14 @@ func TestServer_Roundtrip(t *testing.T) {
 	// setup
 	s := NewServer(60, "")
 	s.DebugEnable("9000")
-	if err := s.Listen(9000); err != nil {
+	if err := s.Listen(9000, 9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	c := client.NewClient("127.0.0.1:9000", time.Second, "")
+	c := client.NewClient(client.Config{
+		RemoteUDPIPPortList: "127.0.0.1:9000",
+		Timeout:             time.Second,
+	})
 	c.DebugEnable("9001")
 	if err := c.Listen(9001); err != nil {
 		t.Fatal(err)
@@ -96,33 +99,33 @@ func TestServer_Replication(t *testing.T) {
 	// setup 3 servers
 	s1 := NewServerWithPeers(60, "asdf", "127.0.0.1:9010", peers)
 	s1.DebugEnable("9010")
-	if err := s1.Listen(9010); err != nil {
+	if err := s1.Listen(9010, 9010); err != nil {
 		t.Fatal(err)
 	}
 
 	s2 := NewServerWithPeers(60, "asdf", "127.0.0.1:9020", peers)
 	s1.DebugEnable("9020")
-	if err := s2.Listen(9020); err != nil {
+	if err := s2.Listen(9020, 9020); err != nil {
 		t.Fatal(err)
 	}
 
 	s3 := NewServerWithPeers(60, "asdf", "127.0.0.1:9030", peers)
 	s3.DebugEnable("9030")
-	if err := s3.Listen(9030); err != nil {
+	if err := s3.Listen(9030, 9030); err != nil {
 		t.Fatal(err)
 	}
 
 	// 2 clients
 
 	// client 1 listens to server 1 ONLY
-	c1 := client.NewClient("127.0.0.1:9010", time.Second, "asdf")
+	c1 := client.NewClient(client.Config{RemoteUDPIPPortList: "127.0.0.1:9010", PreSharedKey: "asdf"})
 	c1.DebugEnable("9001")
 	if err := c1.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
 
 	// client 2 creates server pool with only two servers
-	c2 := client.NewClient("127.0.0.1:9010,127.0.0.1:9020", time.Second, "asdf")
+	c2 := client.NewClient(client.Config{RemoteUDPIPPortList: "127.0.0.1:9010,127.0.0.1:9020", PreSharedKey: "asdf"})
 	c2.DebugEnable("9002")
 	if err := c2.Listen(9002); err != nil {
 		t.Fatal(err)
@@ -170,19 +173,19 @@ func TestServer_MultipleClients(t *testing.T) {
 	// setup
 	s := NewServer(60, "")
 	s.DebugEnable("9000")
-	if err := s.Listen(9000); err != nil {
+	if err := s.Listen(9000, 9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
 
-	c1 := client.NewClient("127.0.0.1:9000", time.Second, "")
+	c1 := client.NewClient(client.Config{RemoteUDPIPPortList: "127.0.0.1:9000"})
 	c1.DebugEnable("9001")
 	if err := c1.Listen(9001); err != nil {
 		t.Fatal(err)
 	}
 	defer c1.Close()
 
-	c2 := client.NewClient("127.0.0.1:9000", time.Second, "")
+	c2 := client.NewClient(client.Config{RemoteUDPIPPortList: "127.0.0.1:9000"})
 	c2.DebugEnable("9002")
 	if err := c2.Listen(9002); err != nil {
 		t.Fatal(err)
@@ -292,7 +295,7 @@ func TestServer_HeavyConcurrency(t *testing.T) {
 
 	preSharedKey := helperRandStr(100)
 	s := NewServer(2, preSharedKey)
-	if err := s.Listen(9000); err != nil {
+	if err := s.Listen(9000, 9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
@@ -303,7 +306,11 @@ func TestServer_HeavyConcurrency(t *testing.T) {
 
 	for cc := 0; cc < clientCount; cc++ {
 		port := 9001 + cc
-		_c := client.NewClient("127.0.0.1:9000", time.Second*5, preSharedKey)
+		_c := client.NewClient(client.Config{
+			RemoteUDPIPPortList: "127.0.0.1:9000",
+			Timeout:             time.Second * 5,
+			PreSharedKey:        preSharedKey,
+		})
 		if err := _c.Listen(port); err != nil {
 			t.Fatal(err)
 		}

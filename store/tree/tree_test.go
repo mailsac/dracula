@@ -83,7 +83,6 @@ func TestTree_Count(t *testing.T) {
 func TestTree_KeyMatch(t *testing.T) {
 	t.Run("returns only matches for a keyPattern", func(t *testing.T) {
 		tr := NewTree(60)
-
 		// we only put one key, but multiple counts
 		tr.Put("asdf")
 		tr.Put("asdf")

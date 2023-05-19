@@ -1,7 +1,7 @@
 package tree
 
 import (
-	"github.com/emirpasic/gods/trees/avltree"
+	"github.com/emirpasic/gods/trees/redblacktree"
 	"regexp"
 	"strings"
 	"sync"
@@ -15,13 +15,13 @@ type ExpireAtSecs int64
 type Tree struct {
 	sync.Mutex
 	defaultExpireAfterSecs int64
-	tree                   *avltree.Tree
+	tree                   *redblacktree.Tree
 }
 
 func NewTree(expireAfterSecs int64) *Tree {
 	return &Tree{
 		defaultExpireAfterSecs: expireAfterSecs,
-		tree:                   avltree.NewWithStringComparator(),
+		tree:                   redblacktree.NewWithStringComparator(),
 	}
 }
 

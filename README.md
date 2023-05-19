@@ -114,7 +114,7 @@ func main() {
 	var expireAfterSeconds int64 = 60
 	preSharedSecret := "supersecret"
 	s := server.NewServer(expireAfterSeconds, preSharedSecret)
-	err := s.Listen(3509)
+	err := s.Listen(3509, 3509)
 	if err != nil {
 		panic(err)
 	}
