@@ -86,6 +86,33 @@ then run the server with default settings and verbose logging:
 ./dracula-server -v
 ```
 
+Available server options:
+```
+./dracula-server -h
+```
+
+```text
+Usage of ./dracula-server:
+  -c 192.168.0.1:3509,192.168.0.2:3555
+        Enable cluster replication. Peers must be comma-separated ip:port like 192.168.0.1:3509,192.168.0.2:3555.
+  -h    Print this help
+  -i string
+        Self peer IP and host like 192.168.0.1:3509 to identify self in the cluster
+  -p int
+        UDP this server will run on (default 3509)
+  -prom string
+        Enable prometheus metrics. May cause pauses. Example: '0.0.0.0:9090'
+  -s string
+        Optional pre-shared auth secret if not using env var DRACULA_SECRET
+  -t int
+        TTL secs - entries will expire after this many seconds (default 60)
+  -tcp int
+        TCP port this server will run on (default 3509)
+  -v    Verbose logging
+  -version
+
+```
+
 Then use the cli for testing. Put keys to the server:
 
 ```
