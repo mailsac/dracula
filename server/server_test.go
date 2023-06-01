@@ -169,7 +169,7 @@ func TestServer_Replication(t *testing.T) {
 	}
 }
 
-func TestServer_MultipleClients(t *testing.T) {
+func TestServer_MultipleClientsNoPanic(t *testing.T) {
 	// setup
 	s := NewServer(60, "")
 	s.DebugEnable("9000")
@@ -178,6 +178,7 @@ func TestServer_MultipleClients(t *testing.T) {
 	}
 	defer s.Close()
 
+	// UDP clients
 	c1 := client.NewClient(client.Config{RemoteUDPIPPortList: "127.0.0.1:9000"})
 	c1.DebugEnable("9001")
 	if err := c1.Listen(9001); err != nil {
@@ -192,9 +193,22 @@ func TestServer_MultipleClients(t *testing.T) {
 	}
 	defer c2.Close()
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	// tcp and udp server
+	c3 := client.NewClient(client.Config{
+		RemoteUDPIPPortList: "127.0.0.1:9000",
+		RemoteTCPIPPortList: "127.0.0.1:9000",
+	})
+	c3.DebugEnable("9003")
+	if err := c3.Listen(9003); err != nil {
+		t.Fatal(err)
+	}
+	defer c3.Close()
 
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	// add one first to not crash the tcp test
+	c1.Put("default", "pa-penn")
 	go func(t *testing.T) {
 		c1.Put("default", "a3.com")
 		c1.Put("default", "a3.com")
@@ -241,7 +255,7 @@ func TestServer_MultipleClients(t *testing.T) {
 			t.Error(err)
 		} else {
 			// expected to count secondary namespace as well
-			assert.Equal(t, 10, count, "failed count all server entries")
+			assert.Equal(t, 12, count, "failed count all server entries")
 		}
 
 		wg.Done()
@@ -275,7 +289,20 @@ func TestServer_MultipleClients(t *testing.T) {
 		if count, err := c2.CountNamespace("default"); err != nil {
 			t.Error(err)
 		} else {
-			assert.Equal(t, 9, count, "failed count default ns entries")
+			assert.Equal(t, 11, count, "failed count default ns entries")
+		}
+
+		wg.Done()
+	}(t)
+
+	go func(t *testing.T) {
+		assert.NoError(t, c3.Put("default", "pa"))
+		patterns := []string{"pa*", "192.168.0.99", "192*", "*", "*"}
+		for i := 0; i < 5; i++ {
+			keys, err := c3.KeyMatch("default", patterns[i])
+			assert.NoError(t, err)
+			assert.NotEmpty(t, keys)
+			time.Sleep(10 * time.Millisecond)
 		}
 
 		wg.Done()
