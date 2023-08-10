@@ -132,11 +132,11 @@ func (s *Server) Close() error {
 		return nil
 	}
 	s.disposed = true
+	udpErr := s.conn.Close()
+	tcpErr := s.tcpConn.Close()
 
 	s.store.DisableCleanup()
 	close(s.messageProcessing)
-	udpErr := s.conn.Close()
-	tcpErr := s.tcpConn.Close()
 
 	if udpErr != nil {
 		return udpErr
