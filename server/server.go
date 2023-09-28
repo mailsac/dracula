@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net"
+	"net/http"
 	"os"
 	"runtime"
 	"strconv"
@@ -124,6 +125,31 @@ func (s *Server) Listen(udpPort, tcpPort int) error {
 
 	go s.readUDPFrames()
 	go s.ReadTCPFrames()
+	return nil
+}
+
+func (s *Server) ListenHTTP(hostPort string) error {
+	if hostPort == "" {
+		return nil
+	}
+	http.HandleFunc("/", s.httpRouter)
+
+	done := make(chan error, 1)
+
+	go func() {
+		done <- http.ListenAndServe(hostPort, nil)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			s.log.Fatal("ListenAndServe:", err)
+			return err
+		}
+	default:
+		s.log.Printf("server listening http %s\n", hostPort)
+		return nil
+	}
 	return nil
 }
 
@@ -352,4 +378,8 @@ func (s *Server) Peers() string {
 		peers += p.String()
 	}
 	return peers
+}
+
+func (s *Server) httpRouter(w http.ResponseWriter, r *http.Request) {
+	s.restServer(w, r)
 }

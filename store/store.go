@@ -106,15 +106,20 @@ func (s *Store) DisableCleanup() {
 	s.cleanupServiceEnabled = false
 }
 
-// runCleanup must run in its own thread
-func (s *Store) runCleanup() {
+// runCleanup must run in its own thread and returns the current
+// namespaces left after cleanup runs. This will typically not be
+// the exact namespaces with keys, because not all namespaces are
+// crawled on each run.
+func (s *Store) runCleanup() []string {
 	if !s.cleanupServiceEnabled {
-		return
+		return []string{}
 	}
 
 	start := time.Now()
 
-	defer time.AfterFunc(runDuration, s.runCleanup)
+	defer time.AfterFunc(runDuration, func() {
+		s.runCleanup()
+	})
 
 	s.Lock()
 	keys := s.namespaces.Keys() // they are randomly ordered
@@ -178,6 +183,15 @@ func (s *Store) runCleanup() {
 	s.LastMetrics.keysRemainingInGCNamespaces.Set(float64(knownKeysCount))
 	s.LastMetrics.countTotalRemainingInGCNamespaces.Set(float64(tally))
 	s.LastMetrics.gcPauseTime.Set(float64(time.Since(start).Milliseconds()))
+
+	s.Lock()
+	keys = s.namespaces.Keys()
+	s.Unlock()
+	var keyList []string
+	for _, key := range keys {
+		keyList = append(keyList, key.(string))
+	}
+	return keyList
 }
 
 func (s *Store) Put(ns, entryKey string) {
@@ -197,6 +211,8 @@ func (s *Store) Put(ns, entryKey string) {
 	subtree.Put(entryKey)
 }
 
+// Count returns the number of entries at a namespace and key, returning
+// zero even if the namespace or key does not exist.
 func (s *Store) Count(ns, entryKey string) int {
 	s.Lock()
 	subtreeI, found := s.namespaces.Get(ns)
@@ -207,6 +223,12 @@ func (s *Store) Count(ns, entryKey string) int {
 	subtree := subtreeI.(*tree.Tree)
 
 	return subtree.Count(entryKey)
+}
+
+// Namespaces returns the approximate current namespaces list
+func (s *Store) Namespaces() []string {
+	keys := s.runCleanup()
+	return keys
 }
 
 // CountEntries returns the count of all entries for the entire namespace.
