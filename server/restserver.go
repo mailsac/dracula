@@ -76,6 +76,8 @@ func NamespacesHandler(s *Server, w http.ResponseWriter, r *http.Request) {
 func (s *Server) restServer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	s.log.Println(r.Method, r.URL.Path, r.URL.Query(), r.RemoteAddr)
+
 	switch r.URL.Path {
 	case "/":
 		switch r.Method {
