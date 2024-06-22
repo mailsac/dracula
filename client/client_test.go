@@ -1,13 +1,14 @@
 package client
 
 import (
-	"github.com/mailsac/dracula/protocol"
-	"github.com/mailsac/dracula/server"
-	"github.com/stretchr/testify/assert"
 	"math"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mailsac/dracula/protocol"
+	"github.com/mailsac/dracula/server"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestClient_Auth(t *testing.T) {
@@ -161,5 +162,35 @@ func TestClient_TcpKeyMatch(t *testing.T) {
 		matched, err = cl.KeyMatch("notexisting", "blah*")
 		assert.NoError(t, err)
 		assert.ElementsMatch(t, []string{}, matched)
+	})
+}
+
+func TestClient_TcpListNamespaces(t *testing.T) {
+	t.Run("returns a list of namespaces", func(t *testing.T) {
+		secret := "asdf-!!?!|asdf"
+		s := server.NewServer(60, secret)
+		s.DebugEnable("9011")
+		err := s.Listen(9011, 9011)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+
+		cl := NewClient(Config{RemoteUDPIPPortList: "127.0.0.1:9011", RemoteTCPIPPortList: "127.0.0.1:9011", Timeout: time.Second * 2, PreSharedKey: secret})
+		assert.NoError(t, cl.Listen(9012))
+		defer cl.Close()
+
+		insertValues := map[string]string{
+			"namespace0": "key0",
+			"namespace1": "key1",
+		}
+
+		for namespace, value := range insertValues {
+			assert.NoError(t, cl.Put(namespace, value))
+		}
+
+		namespaces, err := cl.ListNamespaces()
+		assert.Len(t, namespaces, 2)
+		assert.NoError(t, err) // out of order
 	})
 }

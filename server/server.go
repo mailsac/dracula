@@ -2,9 +2,6 @@ package server
 
 import (
 	"errors"
-	"github.com/mailsac/dracula/protocol"
-	"github.com/mailsac/dracula/server/rawmessage"
-	"github.com/mailsac/dracula/store"
 	"io/ioutil"
 	"log"
 	"math"
@@ -14,6 +11,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/mailsac/dracula/protocol"
+	"github.com/mailsac/dracula/server/rawmessage"
+	"github.com/mailsac/dracula/store"
 )
 
 const MinimumExpirySecs = 2
@@ -296,6 +297,12 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			matchedKeys := s.store.KeyMatch(packet.NamespaceString(), packet.DataValueString())
 			s.log.Println("KeyMatch", packet.NamespaceString(), packet.DataValueString(), matchedKeys)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdTCPOnlyKeys, packet.MessageIDBytes, packet.Namespace, []byte(strings.Join(matchedKeys, "\n")), s.preSharedKey)
+			respond()
+			break
+		case protocol.CmdTCPOnlyNamespaces:
+			namespaces := s.store.Namespaces()
+			s.log.Println("Namespaces", packet.NamespaceString(), packet.DataValueString(), namespaces)
+			resPacket = protocol.NewPacketFromParts(protocol.CmdTCPOnlyNamespaces, packet.MessageIDBytes, packet.Namespace, []byte(strings.Join(namespaces, "\n")), s.preSharedKey)
 			respond()
 			break
 		default:
