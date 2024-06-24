@@ -3,9 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/mailsac/dracula/client"
 	"os"
 	"time"
+
+	"github.com/mailsac/dracula/client"
 )
 
 var (
@@ -15,6 +16,7 @@ var (
 	count        = flag.Bool("count", false, "Mode: Count items at entry key")
 	put          = flag.Bool("put", false, "Mode: Put item at entry key")
 	cmdKeys      = flag.Bool("keys", false, "Mode: list keys matching this pattern (TCP)")
+	namespaces   = flag.Bool("namespaces", false, "Mode: list namespaces")
 	secret       = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
 	localPort    = flag.Int("p", 3510, "Local client port to receive responses on")
 	timeoutSecs  = flag.Int64("t", 6, "Request timeout in seconds")
@@ -120,6 +122,20 @@ func main() {
 		}
 
 		os.Exit(0)
+	}
+	if *namespaces {
+		namespaceList, err := c.ListNamespaces()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		if len(namespaceList) > 0 {
+			for index, namespace := range namespaceList {
+				fmt.Printf("%d) %s\n", index+1, namespace)
+			}
+		} else {
+			fmt.Println("(no namespaces)")
+		}
 	}
 
 	fmt.Println("no command matched")

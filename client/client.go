@@ -5,10 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mailsac/dracula/client/serverpool"
-	"github.com/mailsac/dracula/client/waitingmessage"
-	"github.com/mailsac/dracula/protocol"
-	"github.com/mailsac/dracula/server/rawmessage"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -19,6 +15,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mailsac/dracula/client/serverpool"
+	"github.com/mailsac/dracula/client/waitingmessage"
+	"github.com/mailsac/dracula/protocol"
+	"github.com/mailsac/dracula/server/rawmessage"
 )
 
 var (
@@ -405,6 +406,26 @@ func (c *Client) CountServer() (int, error) {
 
 	wg.Wait() // wait for callback to be called
 	return int(output), err
+}
+
+func (c *Client) ListNamespaces() ([]string, error) {
+	var err error
+	messageID := c.makeMessageID()
+	wg := new(sync.WaitGroup)
+	namespaces := ""
+	cb := func(b []byte, e error) {
+		defer wg.Done()
+		if e != nil {
+			err = e
+			return
+		}
+		namespaces = string(b)
+	}
+	wg.Add(1)
+	sendPacket := protocol.NewPacketFromParts(protocol.CmdTCPOnlyNamespaces, messageID, []byte{}, []byte{}, c.preSharedKey)
+	c.sendOrCallbackErr(sendPacket, cb)
+	wg.Wait()
+	return strings.Split(namespaces, "\n"), err
 }
 
 func (c *Client) Put(namespace, value string) error {

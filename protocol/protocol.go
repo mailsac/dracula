@@ -4,17 +4,18 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/OneOfOne/xxhash"
 	"log"
 	"math"
 	"net"
 	"strings"
+
+	"github.com/OneOfOne/xxhash"
 )
 
 const (
-	PacketSize    = 1500
-	NamespaceSize = 64
-	DataValueSize = 1419
+	PacketSize    int = 1500
+	NamespaceSize int = 64
+	DataValueSize int = 1419
 
 	CmdCount          byte = 'C'
 	CmdPut            byte = 'P'
@@ -22,19 +23,20 @@ const (
 	CmdCountNamespace byte = 'N'
 	CmdCountServer    byte = 'S'
 
-	CmdTCPOnlyKeys     byte = 'K'
-	CmdTCPOnlyValues   byte = 'V'
-	CmdTCPOnlyStore    byte = 'T'
-	CmdTCPOnlyRetrieve byte = 'I'
+	CmdTCPOnlyKeys       byte = 'K'
+	CmdTCPOnlyValues     byte = 'V'
+	CmdTCPOnlyStore      byte = 'T'
+	CmdTCPOnlyRetrieve   byte = 'I'
+	CmdTCPOnlyNamespaces byte = 'L'
 
 	// ResError is a Cmd
 	ResError byte = 'E'
 
 	space       byte = ' '
-	spaceIndex1      = 1
-	spaceIndex2      = 10
-	spaceIndex3      = 15
-	spaceIndex4      = 80
+	spaceIndex1 int  = 1
+	spaceIndex2 int  = 10
+	spaceIndex3 int  = 15
+	spaceIndex4 int  = 80
 )
 
 var (
@@ -56,7 +58,7 @@ func IsRequestCmd(c byte) bool {
 }
 
 func IsTcpOnlyCmd(c byte) bool {
-	return c == CmdTCPOnlyKeys || c == CmdTCPOnlyRetrieve || c == CmdTCPOnlyValues || c == CmdTCPOnlyStore
+	return c == CmdTCPOnlyKeys || c == CmdTCPOnlyRetrieve || c == CmdTCPOnlyValues || c == CmdTCPOnlyStore || c == CmdTCPOnlyNamespaces
 }
 
 // IsResponseCmd indicates if the client should accept this as a command
@@ -106,7 +108,8 @@ func (p *Packet) DataValueString() string {
 }
 
 // ParsePacket parses a packet like:
-//    [Command char][space][xxhash of pre shared key + id + ns + data][space][Message ID uint32][space][Namespace 64 bytes][space][data remaining bytes]
+//
+//	[Command char][space][xxhash of pre shared key + id + ns + data][space][Message ID uint32][space][Namespace 64 bytes][space][data remaining bytes]
 //
 // The MTU of 1500 is the maximum allowed packet size. That means the data key can only be 1419
 // bytes max.
@@ -125,7 +128,7 @@ func ParsePacket(buf []byte) (*Packet, error) {
 	idBytes := buf[spaceIndex2+1 : spaceIndex3]
 	nsBytes := buf[spaceIndex3+1 : spaceIndex4]
 	// allows shorter packet to be turned into 1500 byte total packet
-	endAt := int(math.Min(float64(len(buf)), PacketSize))
+	endAt := int(math.Min(float64(len(buf)), float64(PacketSize)))
 	messageIData := buf[spaceIndex4+1 : endAt]
 	rightSizeData := *PadRight(&messageIData, DataValueSize)
 	p := Packet{
@@ -173,7 +176,7 @@ func ParsePacket(buf []byte) (*Packet, error) {
 }
 
 // bytes formats the packet for transport. The first 8 bytes are a header.
-//// The last byte should be a line break. The data is a UTF-8 string.
+// // The last byte should be a line break. The data is a UTF-8 string.
 func (p *Packet) bytes() []byte {
 	//fmt.Println("Bytes()       message id", p.MessageID, "|")
 	//fmt.Println("Bytes()       Namespace", p.Namespace, "|", len(p.Namespace))
