@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"io/ioutil"
 	"log"
@@ -11,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mailsac/dracula/protocol"
 	"github.com/mailsac/dracula/server/rawmessage"
@@ -40,8 +42,8 @@ type Server struct {
 	log               *log.Logger
 }
 
-func NewServerWithPeers(expireAfterSecs int64, preSharedKey, selfPeerHostPort, peerStringList string) *Server {
-	s := NewServer(expireAfterSecs, preSharedKey)
+func NewServerWithPeers(expireAfterSecs int64, preSharedKey, selfPeerHostPort, peerStringList, storagePath string) *Server {
+	s := NewServer(expireAfterSecs, preSharedKey, storagePath)
 	var peers []net.UDPAddr
 	if len(peerStringList) > 0 {
 		peerParts := strings.Split(peerStringList, ",")
@@ -71,19 +73,23 @@ func NewServerWithPeers(expireAfterSecs int64, preSharedKey, selfPeerHostPort, p
 	s.peers = peers
 	return s
 }
-func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
+func NewServer(expireAfterSecs int64, preSharedKey, storagePath string) *Server {
+	log := log.New(os.Stdout, "", 0)
 	if expireAfterSecs < MinimumExpirySecs {
 		panic(ErrExpiryTooSmall)
 	}
 	psk := []byte(preSharedKey)
-	st := store.NewStore(expireAfterSecs)
+	st, err := store.New(storagePath, time.Second*time.Duration(expireAfterSecs), log)
+	if err != nil {
+		panic(err)
+	}
 	serv := &Server{
-		store:             st,
-		StoreMetrics:      st.LastMetrics,
+		store: st,
+		//StoreMetrics:      st.LastMetrics,
 		preSharedKey:      psk,
 		expireAfterSecs:   expireAfterSecs,
 		messageProcessing: make(chan *rawmessage.RawMessage, runtime.NumCPU()),
-		log:               log.New(os.Stdout, "", 0),
+		log:               log,
 	}
 	serv.DebugDisable()
 	return serv
@@ -162,7 +168,8 @@ func (s *Server) Close() error {
 	udpErr := s.conn.Close()
 	tcpErr := s.tcpConn.Close()
 
-	s.store.DisableCleanup()
+	//s.store.DisableCleanup()
+	s.store.Close()
 	close(s.messageProcessing)
 
 	if udpErr != nil {
@@ -255,10 +262,10 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 		switch packet.Command {
 		case protocol.CmdPutReplicate:
 			// replications get Put() but don't respond or re-replicate
-			s.store.Put(packet.NamespaceString(), packet.DataValueString())
+			s.store.Put(context.TODO(), packet.NamespaceString(), packet.DataValueString())
 			break
 		case protocol.CmdPut:
-			s.store.Put(packet.NamespaceString(), packet.DataValueString())
+			s.store.Put(context.TODO(), packet.NamespaceString(), packet.DataValueString())
 			resPacket = protocol.NewPacketFromParts(protocol.CmdPut, packet.MessageIDBytes, packet.Namespace, []byte{}, s.preSharedKey)
 			respond()
 			if len(s.peers) != 0 {
@@ -267,7 +274,7 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			}
 			break
 		case protocol.CmdCount:
-			countInt := s.store.Count(packet.NamespaceString(), packet.DataValueString())
+			countInt := s.store.CountKey(context.TODO(), packet.NamespaceString(), packet.DataValueString())
 			if countInt > math.MaxUint32 {
 				countInt = math.MaxUint32 // prevent overflow
 			}
@@ -276,7 +283,7 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			respond()
 			break
 		case protocol.CmdCountNamespace:
-			countInt := s.store.CountEntries(packet.NamespaceString())
+			countInt := s.store.CountKeys(context.TODO(), packet.NamespaceString())
 			if countInt > math.MaxUint32 {
 				countInt = math.MaxUint32 // prevent overflow
 			}
@@ -285,7 +292,7 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			respond()
 			break
 		case protocol.CmdCountServer:
-			countInt := s.store.CountServerEntries()
+			countInt := s.store.CountEntries(context.TODO())
 			if countInt > math.MaxUint32 {
 				countInt = math.MaxUint32 // prevent overflow
 			}
@@ -294,13 +301,13 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			respond()
 			break
 		case protocol.CmdTCPOnlyKeys:
-			matchedKeys := s.store.KeyMatch(packet.NamespaceString(), packet.DataValueString())
+			matchedKeys := s.store.MatchKey(context.TODO(), packet.NamespaceString(), packet.DataValueString())
 			s.log.Println("KeyMatch", packet.NamespaceString(), packet.DataValueString(), matchedKeys)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdTCPOnlyKeys, packet.MessageIDBytes, packet.Namespace, []byte(strings.Join(matchedKeys, "\n")), s.preSharedKey)
 			respond()
 			break
 		case protocol.CmdTCPOnlyNamespaces:
-			namespaces := s.store.Namespaces()
+			namespaces := s.store.GetNamespaces(context.TODO())
 			s.log.Println("Namespaces", packet.NamespaceString(), packet.DataValueString(), namespaces)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdTCPOnlyNamespaces, packet.MessageIDBytes, packet.Namespace, []byte(strings.Join(namespaces, "\n")), s.preSharedKey)
 			respond()
@@ -372,7 +379,7 @@ func (s *Server) respondOrLogErrorTCP(packet *protocol.Packet) {
 
 // Clear is for unit testing purposes. It will completely clear the data store.
 func (s *Server) Clear() {
-	s.store = store.NewStore(s.expireAfterSecs)
+	//s.store = store.NewStore(s.expireAfterSecs)
 }
 
 // Peers provides an informational notice about which peers this server will publish to, not including self

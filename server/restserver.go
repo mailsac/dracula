@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -46,7 +47,7 @@ func CountHandler(s *Server, w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	count := s.store.Count(namespace, pattern)
+	count := s.store.CountKey(context.TODO(), namespace, pattern)
 	resp := CountResponse{Count: count}
 	json.NewEncoder(w).Encode(resp)
 }
@@ -61,14 +62,14 @@ func PutHandler(s *Server, w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	s.store.Put(namespace, key)
-	count := s.store.Count(namespace, key)
+	s.store.Put(context.TODO(), namespace, key)
+	count := s.store.CountKey(context.TODO(), namespace, key)
 	resp := CountResponse{Count: count}
 	json.NewEncoder(w).Encode(resp)
 }
 
 func NamespacesHandler(s *Server, w http.ResponseWriter, r *http.Request) {
-	namespaces := s.store.Namespaces()
+	namespaces := s.store.GetNamespaces(context.TODO())
 	resp := ListResponse{List: namespaces}
 	json.NewEncoder(w).Encode(resp)
 }

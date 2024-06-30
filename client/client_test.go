@@ -2,6 +2,8 @@ package client
 
 import (
 	"math"
+	"os"
+	"path"
 	"sync"
 	"testing"
 	"time"
@@ -11,11 +13,15 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var (
+	storageDirectory, _ = os.MkdirTemp(os.TempDir(), "dracula-client-*")
+)
+
 func TestClient_Auth(t *testing.T) {
 	// there are already tests with empty secret as well
-
+	storagePath := path.Join(storageDirectory, "TestClient_Auth.db")
 	secret := "asdf-jkl-HOHOHO!"
-	s := server.NewServer(60, secret)
+	s := server.NewServer(60, secret, storagePath)
 	s.DebugEnable("9000")
 	err := s.Listen(9000, 9000)
 	if err != nil {
@@ -65,7 +71,8 @@ func TestClient_Auth(t *testing.T) {
 }
 
 func TestClient_Healthcheck(t *testing.T) {
-	s1 := server.NewServer(60, "sec1")
+	storagePath := path.Join(storageDirectory, "TestClient_Healthcheck1.db")
+	s1 := server.NewServer(60, "sec1", storagePath)
 	s1.DebugEnable("9000")
 	err := s1.Listen(9000, 9000)
 	if err != nil {
@@ -73,7 +80,8 @@ func TestClient_Healthcheck(t *testing.T) {
 	}
 	defer s1.Close()
 
-	s2 := server.NewServer(60, "sec1")
+	storagePath = path.Join(storageDirectory, "TestClient_Healthcheck2.db")
+	s2 := server.NewServer(60, "sec1", storagePath)
 	s2.DebugEnable("9100")
 	err = s2.Listen(9100, 9010)
 	if err != nil {
@@ -129,8 +137,9 @@ func TestClient_messageIDThreadSafe(t *testing.T) {
 
 func TestClient_TcpKeyMatch(t *testing.T) {
 	t.Run("returns ordered keys with secret", func(t *testing.T) {
+		storagePath := path.Join(storageDirectory, "TestClient_TcpKeyMatch.db")
 		secret := "asdf-!!?!|asdf"
-		s := server.NewServer(60, secret)
+		s := server.NewServer(60, secret, storagePath)
 		s.DebugEnable("9000")
 		err := s.Listen(9000, 9000)
 		if err != nil {
@@ -167,8 +176,9 @@ func TestClient_TcpKeyMatch(t *testing.T) {
 
 func TestClient_TcpListNamespaces(t *testing.T) {
 	t.Run("returns a list of namespaces", func(t *testing.T) {
+		storagePath := path.Join(storageDirectory, "TestClient_TcpListNamespaces.db")
 		secret := "asdf-!!?!|asdf"
-		s := server.NewServer(60, secret)
+		s := server.NewServer(60, secret, storagePath)
 		s.DebugEnable("9011")
 		err := s.Listen(9011, 9011)
 		if err != nil {
