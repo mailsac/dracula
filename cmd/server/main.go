@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/mailsac/dracula/server"
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/mailsac/dracula/server"
 )
 
 var (
@@ -15,12 +16,13 @@ var (
 	port            = flag.Int("p", 3509, "UDP this server will run on")
 	tcpPort         = flag.Int("tcp", 3509, "TCP port this server will run on")
 	restHostPort    = flag.String("http", "0.0.0.0:3510", "Enable HTTP REST interface. Example: '0.0.0.0:3510'")
-	secret          = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
+	key             = flag.String("k", "", "Optional pre-shared auth secret key if not using env var DRACULA_SECRET")
 	peerIPPort      = flag.String("i", "", "Self peer IP and host like 192.168.0.1:3509 to identify self in the cluster")
 	peers           = flag.String("c", "", "Enable cluster replication. Peers must be comma-separated ip:port like `192.168.0.1:3509,192.168.0.2:3555`.")
 	verbose         = flag.Bool("v", false, "Verbose logging")
 	printVersion    = flag.Bool("version", false, "Print version")
 	promHostPort    = flag.String("prom", "", "Enable prometheus metrics. May cause pauses. Example: '0.0.0.0:9090'")
+	storage         = flag.String("s", "", "Set path to file location for persistent storage. Data will be stored in memopry if not set.")
 )
 
 // Version should be replaced at build time
@@ -31,6 +33,7 @@ var Build = "unknown"
 
 func main() {
 	preSharedSecret := os.Getenv("DRACULA_SECRET")
+	storagePath := ""
 	flag.Parse()
 	if *help {
 		flag.Usage()
@@ -40,8 +43,11 @@ func main() {
 		fmt.Println(Version, Build)
 		return
 	}
-	if *secret != "" {
-		preSharedSecret = *secret
+	if *key != "" {
+		preSharedSecret = *key
+	}
+	if *storage != "" {
+		storagePath = *storage
 	}
 	var s *server.Server
 	peerList := strings.Trim(*peers, " \n")
@@ -51,12 +57,12 @@ func main() {
 		os.Exit(1)
 	}
 	if len(peerList) > 0 {
-		s = server.NewServerWithPeers(*expireAfterSecs, preSharedSecret, *peerIPPort, peerList)
+		s = server.NewServerWithPeers(*expireAfterSecs, preSharedSecret, *peerIPPort, peerList, storagePath)
 		if *verbose {
 			fmt.Printf("dracula server cluster mode enabled: self=%s; peers=%s \n", *peerIPPort, s.Peers())
 		}
 	} else {
-		s = server.NewServer(*expireAfterSecs, preSharedSecret)
+		s = server.NewServer(*expireAfterSecs, preSharedSecret, storagePath)
 	}
 	if *verbose {
 		s.DebugEnable(fmt.Sprintf("udp:%d, tcp:%d, http:%s -", *port, *tcpPort, *restHostPort))

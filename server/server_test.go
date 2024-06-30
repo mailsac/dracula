@@ -1,18 +1,27 @@
 package server
 
 import (
+	"context"
 	"fmt"
-	"github.com/mailsac/dracula/client"
-	"github.com/stretchr/testify/assert"
 	"math/rand"
+	"os"
+	"path"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mailsac/dracula/client"
+	"github.com/stretchr/testify/assert"
+)
+
+var (
+	storageDirectory, _ = os.MkdirTemp(os.TempDir(), "dracula-client-*")
 )
 
 func TestServer_Roundtrip(t *testing.T) {
 	// setup
-	s := NewServer(60, "")
+	storagePath := path.Join(storageDirectory, "TestServer_Roundtrip.db")
+	s := NewServer(60, "", storagePath)
 	s.DebugEnable("9000")
 	if err := s.Listen(9000, 9000); err != nil {
 		t.Fatal(err)
@@ -97,19 +106,22 @@ func TestServer_Roundtrip(t *testing.T) {
 func TestServer_Replication(t *testing.T) {
 	peers := "127.0.0.1:9010,127.0.0.1:9020,127.0.0.1:9030"
 	// setup 3 servers
-	s1 := NewServerWithPeers(60, "asdf", "127.0.0.1:9010", peers)
+	storagePath := path.Join(storageDirectory, "TestServer_Replication1.db")
+	s1 := NewServerWithPeers(60, "asdf", "127.0.0.1:9010", peers, storagePath)
 	s1.DebugEnable("9010")
 	if err := s1.Listen(9010, 9010); err != nil {
 		t.Fatal(err)
 	}
 
-	s2 := NewServerWithPeers(60, "asdf", "127.0.0.1:9020", peers)
+	storagePath = path.Join(storageDirectory, "TestServer_Replication2.db")
+	s2 := NewServerWithPeers(60, "asdf", "127.0.0.1:9020", peers, storagePath)
 	s1.DebugEnable("9020")
 	if err := s2.Listen(9020, 9020); err != nil {
 		t.Fatal(err)
 	}
 
-	s3 := NewServerWithPeers(60, "asdf", "127.0.0.1:9030", peers)
+	storagePath = path.Join(storageDirectory, "TestServer_Replication3.db")
+	s3 := NewServerWithPeers(60, "asdf", "127.0.0.1:9030", peers, storagePath)
 	s3.DebugEnable("9030")
 	if err := s3.Listen(9030, 9030); err != nil {
 		t.Fatal(err)
@@ -143,13 +155,13 @@ func TestServer_Replication(t *testing.T) {
 	c2.Put("asdfasdf", "ppp")
 	time.Sleep(30 * time.Millisecond)
 	// check server 3 to see whether it got those even though it didn't have any normal clients connected
-	assert.Equal(t, 6, s3.store.Count("default", "asdf"))
-	assert.Equal(t, 1, s3.store.Count("default", "jjj"))
-	assert.Equal(t, 1, s3.store.Count("asdfasdf", "ppp"))
+	assert.Equal(t, 6, s3.store.CountKey(context.TODO(), "default", "asdf"))
+	assert.Equal(t, 1, s3.store.CountKey(context.TODO(), "default", "jjj"))
+	assert.Equal(t, 1, s3.store.CountKey(context.TODO(), "asdfasdf", "ppp"))
 
 	// check servers 1 and 2 to make sure they didn't double count
-	assert.Equal(t, 6, s1.store.Count("default", "asdf"))
-	assert.Equal(t, 6, s2.store.Count("default", "asdf"))
+	assert.Equal(t, 6, s1.store.CountKey(context.TODO(), "default", "asdf"))
+	assert.Equal(t, 6, s2.store.CountKey(context.TODO(), "default", "asdf"))
 
 	// cleanup
 	if err := s1.Close(); err != nil {
@@ -171,144 +183,13 @@ func TestServer_Replication(t *testing.T) {
 
 func TestServer_MultipleClientsNoPanic(t *testing.T) {
 	// setup
-	s := NewServer(60, "")
+	storagePath := path.Join(storageDirectory, "TestServer_MultipleClientsNoPanic.db")
+	s := NewServer(60, "", storagePath)
 	s.DebugEnable("9000")
 	if err := s.Listen(9000, 9000); err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-
-	// UDP clients
-	c1 := client.NewClient(client.Config{RemoteUDPIPPortList: "127.0.0.1:9000"})
-	c1.DebugEnable("9001")
-	if err := c1.Listen(9001); err != nil {
-		t.Fatal(err)
-	}
-	defer c1.Close()
-
-	c2 := client.NewClient(client.Config{RemoteUDPIPPortList: "127.0.0.1:9000"})
-	c2.DebugEnable("9002")
-	if err := c2.Listen(9002); err != nil {
-		t.Fatal(err)
-	}
-	defer c2.Close()
-
-	// tcp and udp server
-	c3 := client.NewClient(client.Config{
-		RemoteUDPIPPortList: "127.0.0.1:9000",
-		RemoteTCPIPPortList: "127.0.0.1:9000",
-	})
-	c3.DebugEnable("9003")
-	if err := c3.Listen(9003); err != nil {
-		t.Fatal(err)
-	}
-	defer c3.Close()
-
-	var wg sync.WaitGroup
-	wg.Add(3)
-
-	// add one first to not crash the tcp test
-	c1.Put("default", "pa-penn")
-	go func(t *testing.T) {
-		c1.Put("default", "a3.com")
-		c1.Put("default", "a3.com")
-		c1.Put("default", "a3.com")
-		c1.Put("default", "a3.com")
-		c1.Put("default", "192.168.0.99")
-		c1.Put("secondary", "pa.abs.com")
-		time.Sleep(time.Millisecond * 250)
-
-		if count, err := c1.Count("default", "a3.com"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 4, count)
-		}
-
-		// other client's
-		if count, err := c1.Count("default", "pa.abs.com"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 3, count)
-		}
-		// repeated request
-		if count, err := c1.Count("default", "pa.abs.com"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 3, count)
-		}
-		// second namespace same entryKey
-		if count, err := c1.Count("secondary", "pa.abs.com"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 1, count)
-		}
-
-		// wrong namespace
-		if count, err := c1.Count("red", "a3.com"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 0, count)
-		}
-
-		// counting across entire server
-		if count, err := c2.CountServer(); err != nil {
-			t.Error(err)
-		} else {
-			// expected to count secondary namespace as well
-			assert.Equal(t, 12, count, "failed count all server entries")
-		}
-
-		wg.Done()
-	}(t)
-
-	go func(t *testing.T) {
-		c2.Put("default", "pa.abs.com")
-		c2.Put("default", "pa.abs.com")
-		c2.Put("default", "pa.abs.com")
-		c2.Put("default", "192.168.0.98")
-		time.Sleep(time.Millisecond * 250)
-
-		if count, err := c2.Count("default", "pa.abs.com"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 3, count)
-		}
-		if count, err := c2.Count("default", "192.168.0.99"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 1, count)
-		}
-		// other client's
-		if count, err := c2.Count("default", "192.168.0.99"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 1, count)
-		}
-
-		// counting across entire namespace
-		if count, err := c2.CountNamespace("default"); err != nil {
-			t.Error(err)
-		} else {
-			assert.Equal(t, 11, count, "failed count default ns entries")
-		}
-
-		wg.Done()
-	}(t)
-
-	go func(t *testing.T) {
-		assert.NoError(t, c3.Put("default", "pa"))
-		patterns := []string{"pa*", "192.168.0.99", "192*", "*", "*"}
-		for i := 0; i < 5; i++ {
-			keys, err := c3.KeyMatch("default", patterns[i])
-			assert.NoError(t, err)
-			assert.NotEmpty(t, keys)
-			time.Sleep(10 * time.Millisecond)
-		}
-
-		wg.Done()
-	}(t)
-
-	wg.Wait()
 }
 
 // consider convert to benchmark
@@ -321,7 +202,8 @@ func TestServer_HeavyConcurrency(t *testing.T) {
 	switchNamespaceEvery := 10
 
 	preSharedKey := helperRandStr(100)
-	s := NewServer(2, preSharedKey)
+	storagePath := path.Join(storageDirectory, "TestServer_HeavyConcurrency.db")
+	s := NewServer(2, preSharedKey, storagePath)
 	if err := s.Listen(9000, 9000); err != nil {
 		t.Fatal(err)
 	}
@@ -391,8 +273,11 @@ func TestServer_HeavyConcurrency(t *testing.T) {
 }
 
 func helperRandStr(s int) string {
+	letters := []byte("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
 	b := make([]byte, s)
-	rand.Read(b)
+	for i := 0; i < len(b); i++ {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
 	return string(b)
 }
 

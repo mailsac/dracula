@@ -1,19 +1,22 @@
 package store
 
 import (
-	"github.com/emirpasic/gods/maps/hashmap"
-	"github.com/mailsac/dracula/store/tree"
+	"context"
+	"log"
+	"net/http"
+	"time"
+
+	"github.com/maxtek6/keybase-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"net/http"
-	"sync"
-	"time"
+)
+
+const (
+	DefaultStoragePath string        = ""
+	cleanupInterval    time.Duration = time.Second * 15
 )
 
 var runDuration = time.Second * 15
-
-// denominator of how many namespaces to garbage collect max on a run. if 3 then 1/3 or `<total keys>/3`
-const maxNamespacesDenom = 2
 
 type Metrics struct {
 	registry                          *prometheus.Registry
@@ -38,239 +41,100 @@ func (m *Metrics) ListenAndServe(promHostPort string) error {
 	return err
 }
 
-// Store provides a way to store entries and count them based on namespaces.
-// Old entries are garbage collected in a way that attempts to not block for too long.
 type Store struct {
-	sync.Mutex            // mutext locks namespaces
-	namespaces            *hashmap.Map
-	expireAfterSecs       int64
-	cleanupServiceEnabled bool
-	LastMetrics           *Metrics
-	lastGCdNamespaces     map[string]bool
+	kb              *keybase.Keybase
+	log             *log.Logger
+	cleanupTicker   *time.Ticker
+	shutdownChannel chan struct{}
+	exitChannel     chan struct{}
 }
 
-func NewStore(expireAfterSecs int64) *Store {
-	registry := prometheus.NewRegistry()
-	maxNamespacesDenomGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dracula_max_namespaces_denom",
-		Help: "Denominator/portion of namespaces to be garbage collected each cleanup run",
-	})
-	namespacesTotalCount := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dracula_namespaces_count",
-		Help: "Number of top level key namespaces",
-	})
-	namespacesGarbageCollected := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dracula_namespaces_gc_count",
-		Help: "Number of namespaces which had keys garbage collected during last cleanup run",
-	})
-	keysRemainingInGCNamespaces := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dracula_keys_in_gc_namespaces",
-		Help: "Count of unexpired keys in last garbage collected namespaces",
-	})
-	countTotalRemainingInGCNamespaces := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dracula_key_sum_in_gc_namespaces",
-		Help: "Count of key values in last garbage collected namespace valid keys",
-	})
-	gcPauseTime := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "dracula_gc_pause_millis",
-		Help: "How long last garbage collection took in milliseconds",
-	})
-	registry.MustRegister(maxNamespacesDenomGauge, namespacesTotalCount, namespacesGarbageCollected, keysRemainingInGCNamespaces, countTotalRemainingInGCNamespaces, gcPauseTime)
-
-	s := &Store{
-		expireAfterSecs: expireAfterSecs,
-		namespaces:      hashmap.New(),
-		LastMetrics: &Metrics{
-			registry:                          registry,
-			maxNamespacesDenom:                maxNamespacesDenomGauge,
-			namespacesTotalCount:              namespacesTotalCount,
-			namespacesGarbageCollected:        namespacesGarbageCollected,
-			keysRemainingInGCNamespaces:       keysRemainingInGCNamespaces,
-			countTotalRemainingInGCNamespaces: countTotalRemainingInGCNamespaces,
-			gcPauseTime:                       gcPauseTime,
-		},
+func New(storagePath string, keyDuration time.Duration, log *log.Logger) (*Store, error) {
+	kbOptions := []keybase.Option{keybase.WithTTL(keyDuration)}
+	if storagePath != DefaultStoragePath {
+		kbOptions = append(kbOptions, keybase.WithStorage(storagePath))
 	}
-	s.cleanupServiceEnabled = true
-	s.LastMetrics.maxNamespacesDenom.Set(maxNamespacesDenom)
-
-	go s.runCleanup()
-
-	return s
-}
-
-func (s *Store) EnableCleanup() {
-	s.cleanupServiceEnabled = true
-}
-
-func (s *Store) DisableCleanup() {
-	s.cleanupServiceEnabled = false
-}
-
-// runCleanup must run in its own thread and returns the current
-// namespaces left after cleanup runs. This will typically not be
-// the exact namespaces with keys, because not all namespaces are
-// crawled on each run.
-func (s *Store) runCleanup() []string {
-	if !s.cleanupServiceEnabled {
-		return []string{}
+	kb, err := keybase.Open(context.TODO(), kbOptions...)
+	if err != nil {
+		return nil, err
 	}
+	store := &Store{
+		kb:            kb,
+		log:           log,
+		cleanupTicker: time.NewTicker(keyDuration * 10),
+	}
+	go store.backgroundService()
+	return store, nil
+}
 
-	start := time.Now()
+func (s *Store) backgroundService() {
+	ok := true
+	for ok {
+		select {
+		case <-s.cleanupTicker.C:
 
-	defer time.AfterFunc(runDuration, func() {
-		s.runCleanup()
-	})
-
-	s.Lock()
-	keys := s.namespaces.Keys() // they are randomly ordered
-	s.Unlock()
-
-	hashSize := len(keys)
-	maxNamespaces := hashSize / maxNamespacesDenom
-
-	s.LastMetrics.namespacesTotalCount.Set(float64(hashSize))
-	s.LastMetrics.namespacesGarbageCollected.Set(float64(maxNamespaces))
-
-	nsSubtrees := make(map[string]*tree.Tree)
-	crawledKeys := make(map[string]bool)
-
-	s.Lock()
-	{
-		// pointers to some the subtrees are fetched
-		var ns string
-		var found bool
-		var subtreeI interface{}
-		var crawledLast bool
-
-		for i := 0; i < maxNamespaces; i++ {
-			ns = keys[i].(string)
-			_, crawledLast = s.lastGCdNamespaces[ns]
-			if crawledLast {
-				continue
-			}
-			subtreeI, found = s.namespaces.Get(ns)
-			if !found {
-				continue
-			}
-			nsSubtrees[ns] = subtreeI.(*tree.Tree)
+		case <-s.shutdownChannel:
+			s.cleanupTicker.Stop()
+			ok = false
 		}
 	}
-	s.Unlock()
-
-	var subtreeKeys []string
-	var knownKeysCount int
-	var subtreeKeyTrackCount int
-	var tally int
-	for ns, subtree := range nsSubtrees {
-		// Keys will cleanup every empty entry key
-		subtreeKeys, subtreeKeyTrackCount = subtree.Keys()
-		knownKeysCount += len(subtreeKeys)
-		tally += subtreeKeyTrackCount
-
-		if len(subtreeKeys) == 0 {
-			// an empty subtree can be removed from the top level namespaces
-			s.Lock()
-			s.namespaces.Remove(ns)
-			s.Unlock()
-			continue
-		}
-		crawledKeys[ns] = true
-	}
-
-	// set these here to skip them on the next garbage collection
-	s.lastGCdNamespaces = crawledKeys
-
-	s.LastMetrics.keysRemainingInGCNamespaces.Set(float64(knownKeysCount))
-	s.LastMetrics.countTotalRemainingInGCNamespaces.Set(float64(tally))
-	s.LastMetrics.gcPauseTime.Set(float64(time.Since(start).Milliseconds()))
-
-	s.Lock()
-	keys = s.namespaces.Keys()
-	s.Unlock()
-	var keyList []string
-	for _, key := range keys {
-		keyList = append(keyList, key.(string))
-	}
-	return keyList
+	s.exitChannel <- struct{}{}
 }
 
-func (s *Store) Put(ns, entryKey string) {
-	var subtree *tree.Tree
-	s.Lock()
-	subtreeI, found := s.namespaces.Get(ns)
-	s.Unlock()
-	if !found {
-		subtree = tree.NewTree(s.expireAfterSecs)
-		s.Lock()
-		s.namespaces.Put(ns, subtree)
-		s.Unlock()
-	} else {
-		subtree = subtreeI.(*tree.Tree)
-	}
-
-	subtree.Put(entryKey)
+func (s *Store) Close() {
+	s.shutdownChannel <- struct{}{}
+	<-s.exitChannel
+	s.kb.Close()
 }
 
-// Count returns the number of entries at a namespace and key, returning
-// zero even if the namespace or key does not exist.
-func (s *Store) Count(ns, entryKey string) int {
-	s.Lock()
-	subtreeI, found := s.namespaces.Get(ns)
-	s.Unlock()
-	if !found {
+func (s *Store) Put(ctx context.Context, namespace, key string) {
+	err := s.kb.Put(ctx, namespace, key)
+	if err != nil {
+		s.log.Printf("put error: %v", err)
+	}
+}
+
+func (s *Store) CountKey(ctx context.Context, namespace, key string) int {
+	count, err := s.kb.CountKey(ctx, namespace, key, true)
+	if err != nil {
+		s.log.Printf("count key error: %v", err)
 		return 0
 	}
-	subtree := subtreeI.(*tree.Tree)
-
-	return subtree.Count(entryKey)
-}
-
-// Namespaces returns the approximate current namespaces list
-func (s *Store) Namespaces() []string {
-	keys := s.runCleanup()
-	return keys
-}
-
-// CountEntries returns the count of all entries for the entire namespace.
-// This is an expensive operation.
-func (s *Store) CountEntries(ns string) int {
-	s.Lock()
-	subtreeI, found := s.namespaces.Get(ns)
-	s.Unlock()
-	if !found {
-		return 0
-	}
-	subtree := subtreeI.(*tree.Tree)
-
-	_, count := subtree.Keys()
 	return count
 }
 
-// KeyMatch crawls the subtree to return keys containing keyPattern string.
-func (s *Store) KeyMatch(ns string, keyPattern string) []string {
-	s.Lock()
-	subtreeI, found := s.namespaces.Get(ns)
-	s.Unlock()
-
-	if !found {
-		return []string{}
+func (s *Store) MatchKey(ctx context.Context, namespace, pattern string) []string {
+	matches, err := s.kb.MatchKey(ctx, namespace, pattern, true, false)
+	if err != nil {
+		s.log.Printf("count key error: %v", err)
+		return nil
 	}
-	subtree := subtreeI.(*tree.Tree)
-
-	return subtree.KeyMatch(keyPattern)
+	return matches
 }
 
-// CountServerEntries returns the count of all entries for the entire server.
-// This is an extremely expensive operation.
-func (s *Store) CountServerEntries() int {
-	s.Lock()
-	spaces := s.namespaces.Keys() // they are randomly ordered
-	s.Unlock()
-	var entryCount int
-	var c int
-	for _, ns := range spaces {
-		c = s.CountEntries(ns.(string))
-		entryCount += c
+func (s *Store) CountKeys(ctx context.Context, namespace string) int {
+	count, err := s.kb.CountKeys(ctx, namespace, true, false)
+	if err != nil {
+		s.log.Printf("count keys error: %v", err)
+		return 0
 	}
-	return entryCount
+	return count
+}
+
+func (s *Store) CountEntries(ctx context.Context) int {
+	count, err := s.kb.CountEntries(ctx, true, false)
+	if err != nil {
+		s.log.Printf("count entries error: %v", err)
+		return 0
+	}
+	return count
+}
+
+func (s *Store) GetNamespaces(ctx context.Context) []string {
+	namespaces, err := s.kb.GetNamespaces(context.TODO(), true)
+	if err != nil {
+		s.log.Printf("get namespaces error: %v", err)
+		return nil
+	}
+	return namespaces
 }
