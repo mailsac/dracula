@@ -82,6 +82,7 @@ func (s *Store) backgroundService() {
 }
 
 func (s *Store) Close() {
+	s.cleanupTicker.Stop()
 	s.shutdownChannel <- struct{}{}
 	<-s.exitChannel
 	s.kb.Close()

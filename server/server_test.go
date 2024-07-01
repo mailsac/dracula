@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	storageDirectory, _ = os.MkdirTemp(os.TempDir(), "dracula-client-*")
+	storageDirectory, _ = os.MkdirTemp(os.TempDir(), "dracula-server-*")
 )
 
 func TestServer_Roundtrip(t *testing.T) {
