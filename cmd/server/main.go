@@ -3,10 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/mailsac/dracula/server"
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/mailsac/dracula/pkg/server"
 )
 
 var (

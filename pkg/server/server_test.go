@@ -2,12 +2,13 @@ package server
 
 import (
 	"fmt"
-	"github.com/mailsac/dracula/client"
-	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mailsac/dracula/pkg/client"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestServer_Roundtrip(t *testing.T) {

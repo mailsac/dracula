@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mailsac/dracula/protocol"
-	"github.com/mailsac/dracula/server"
+	"github.com/mailsac/dracula/pkg/protocol"
+	"github.com/mailsac/dracula/pkg/server"
 	"github.com/stretchr/testify/assert"
 )
 
