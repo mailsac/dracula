@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/mailsac/dracula/client"
+	"github.com/mailsac/dracula/pkg/client"
 )
 
 var (

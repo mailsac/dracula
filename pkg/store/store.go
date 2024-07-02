@@ -1,13 +1,14 @@
 package store
 
 import (
-	"github.com/emirpasic/gods/maps/hashmap"
-	"github.com/mailsac/dracula/store/tree"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/emirpasic/gods/maps/hashmap"
+	"github.com/mailsac/dracula/pkg/store/tree"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var runDuration = time.Second * 15

@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mailsac/dracula/protocol"
-	"github.com/mailsac/dracula/server/rawmessage"
-	"github.com/mailsac/dracula/store"
+	"github.com/mailsac/dracula/pkg/protocol"
+	"github.com/mailsac/dracula/pkg/server/rawmessage"
+	"github.com/mailsac/dracula/pkg/store"
 )
 
 const MinimumExpirySecs = 2

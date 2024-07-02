@@ -16,10 +16,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mailsac/dracula/client/serverpool"
-	"github.com/mailsac/dracula/client/waitingmessage"
-	"github.com/mailsac/dracula/protocol"
-	"github.com/mailsac/dracula/server/rawmessage"
+	"github.com/mailsac/dracula/pkg/client/serverpool"
+	"github.com/mailsac/dracula/pkg/client/waitingmessage"
+	"github.com/mailsac/dracula/pkg/protocol"
+	"github.com/mailsac/dracula/pkg/server/rawmessage"
 )
 
 var (

@@ -3,11 +3,12 @@ package rawmessage
 import (
 	"bufio"
 	"bytes"
-	"github.com/mailsac/dracula/protocol"
 	"io"
 	"log"
 	"net"
 	"unicode"
+
+	"github.com/mailsac/dracula/pkg/protocol"
 )
 
 type RawMessage struct {
