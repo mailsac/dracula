@@ -47,6 +47,7 @@ type Store struct {
 	cleanupTicker   *time.Ticker
 	shutdownChannel chan struct{}
 	exitChannel     chan struct{}
+	running         bool
 }
 
 func New(storagePath string, keyDuration time.Duration, log *log.Logger) (*Store, error) {
@@ -59,32 +60,36 @@ func New(storagePath string, keyDuration time.Duration, log *log.Logger) (*Store
 		return nil, err
 	}
 	store := &Store{
-		kb:            kb,
-		log:           log,
-		cleanupTicker: time.NewTicker(keyDuration * 10),
+		kb:              kb,
+		log:             log,
+		cleanupTicker:   time.NewTicker(keyDuration * 10),
+		shutdownChannel: make(chan struct{}),
+		exitChannel:     make(chan struct{}),
+		running:         false,
 	}
 	go store.backgroundService()
 	return store, nil
 }
 
 func (s *Store) backgroundService() {
-	ok := true
-	for ok {
+	s.running = true
+	for s.running {
 		select {
 		case <-s.cleanupTicker.C:
 
 		case <-s.shutdownChannel:
 			s.cleanupTicker.Stop()
-			ok = false
+			s.running = false
 		}
 	}
 	s.exitChannel <- struct{}{}
 }
 
 func (s *Store) Close() {
-	s.cleanupTicker.Stop()
-	s.shutdownChannel <- struct{}{}
-	<-s.exitChannel
+	if s.running {
+		s.shutdownChannel <- struct{}{}
+		<-s.exitChannel
+	}
 	s.kb.Close()
 }
 

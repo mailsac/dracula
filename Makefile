@@ -1,10 +1,17 @@
 # gets last tag
 VERSION := $(shell git describe --abbrev=0 --tags)
 
-test:
-	go vet ./...
-	go test ./...
 .PHONY: test
+test: unit cover
+
+.PHONY: unit
+unit:
+	go vet ./...
+	go test -v -timeout 30s -coverprofile=coverage.out ./...
+
+.PHONY: cover
+cover:
+	go tool cover -func=coverage.out
 
 build-cli:
 	go build -o dracula-cli cmd/cli/main.go
