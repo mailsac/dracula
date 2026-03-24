@@ -18,10 +18,10 @@ func TestTree_removeExpired(t *testing.T) {
 		time.Now().Unix() - 1,  // expired
 	}
 
-	result := removeExpired(&entries)
-	assert.Equal(t, 2, len(*result))
-	assert.Equal(t, (*result)[0], keep1)
-	assert.Equal(t, (*result)[1], keep2)
+	result := removeExpired(entry{expiresAt: entries, liveCount: len(entries)})
+	assert.Equal(t, 2, result.liveCount)
+	assert.Equal(t, result.expiresAt[0], keep1)
+	assert.Equal(t, result.expiresAt[1], keep2)
 }
 
 func TestTree_Count(t *testing.T) {
@@ -78,6 +78,13 @@ func TestTree_Count(t *testing.T) {
 		assert.Equal(t, 0, len(keys), "Keys() should expire keys")
 		assert.Equal(t, 0, entryCount, "Keys() should expire entries")
 	})
+	t.Run("put returns live count without needing a second scan", func(t *testing.T) {
+		tr := NewTree(2)
+		assert.Equal(t, 1, tr.Put("willy"))
+		assert.Equal(t, 2, tr.Put("willy"))
+		assert.Equal(t, 1, tr.Put("other"))
+		assert.Equal(t, 2, tr.Count("willy"))
+	})
 }
 
 func TestTree_KeyMatch(t *testing.T) {
@@ -125,7 +132,7 @@ func TestTree_KeyMatch(t *testing.T) {
 	t.Run("it does not return the key when all its values are expired", func(t *testing.T) {
 		tr := NewTree(1)
 		tr.Put("a")
-		tr.tree.Put("a", []string{})
+		tr.tree.Put("a", entry{})
 
 		tr.Put("cdbe")
 		tr.Put("cd:aa")

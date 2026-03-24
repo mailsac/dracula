@@ -61,8 +61,7 @@ func PutHandler(s *Server, w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(resp)
 		return
 	}
-	s.store.Put(namespace, key)
-	count := s.store.Count(namespace, key)
+	count := s.store.Put(namespace, key)
 	resp := CountResponse{Count: count}
 	json.NewEncoder(w).Encode(resp)
 }
