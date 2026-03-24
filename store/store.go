@@ -43,6 +43,7 @@ func (m *Metrics) ListenAndServe(promHostPort string) error {
 type Store struct {
 	sync.Mutex            // mutext locks namespaces
 	namespaces            *hashmap.Map
+	namespaceSnapshot     []string
 	expireAfterSecs       int64
 	cleanupServiceEnabled bool
 	LastMetrics           *Metrics
@@ -78,8 +79,9 @@ func NewStore(expireAfterSecs int64) *Store {
 	registry.MustRegister(maxNamespacesDenomGauge, namespacesTotalCount, namespacesGarbageCollected, keysRemainingInGCNamespaces, countTotalRemainingInGCNamespaces, gcPauseTime)
 
 	s := &Store{
-		expireAfterSecs: expireAfterSecs,
-		namespaces:      hashmap.New(),
+		expireAfterSecs:   expireAfterSecs,
+		namespaces:        hashmap.New(),
+		lastGCdNamespaces: map[string]bool{},
 		LastMetrics: &Metrics{
 			registry:                          registry,
 			maxNamespacesDenom:                maxNamespacesDenomGauge,
@@ -191,24 +193,27 @@ func (s *Store) runCleanup() []string {
 	for _, key := range keys {
 		keyList = append(keyList, key.(string))
 	}
+
+	s.Lock()
+	s.namespaceSnapshot = append([]string(nil), keyList...)
+	s.Unlock()
 	return keyList
 }
 
-func (s *Store) Put(ns, entryKey string) {
+func (s *Store) Put(ns, entryKey string) int {
 	var subtree *tree.Tree
 	s.Lock()
 	subtreeI, found := s.namespaces.Get(ns)
-	s.Unlock()
 	if !found {
 		subtree = tree.NewTree(s.expireAfterSecs)
-		s.Lock()
 		s.namespaces.Put(ns, subtree)
-		s.Unlock()
+		s.namespaceSnapshot = append(s.namespaceSnapshot, ns)
 	} else {
 		subtree = subtreeI.(*tree.Tree)
 	}
+	s.Unlock()
 
-	subtree.Put(entryKey)
+	return subtree.Put(entryKey)
 }
 
 // Count returns the number of entries at a namespace and key, returning
@@ -227,8 +232,12 @@ func (s *Store) Count(ns, entryKey string) int {
 
 // Namespaces returns the approximate current namespaces list
 func (s *Store) Namespaces() []string {
-	keys := s.runCleanup()
-	return keys
+	s.Lock()
+	defer s.Unlock()
+	if len(s.namespaceSnapshot) == 0 {
+		return []string{}
+	}
+	return append([]string(nil), s.namespaceSnapshot...)
 }
 
 // CountEntries returns the count of all entries for the entire namespace.

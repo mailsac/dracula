@@ -10,6 +10,11 @@ import (
 
 type ExpireAtSecs int64
 
+type entry struct {
+	expiresAt []int64
+	liveCount int
+}
+
 // Tree is a a thread-safe data structure for tracking expirable items. It automatically expires old entries and keys.
 // It does not garbage collect. Items are only expired when interacting with the data structure.
 type Tree struct {
@@ -60,20 +65,24 @@ func (n *Tree) Count(entryKey string) int {
 	n.Lock()
 	defer n.Unlock()
 
-	datesSecs := n.getAndCleanupUnsafe(entryKey)
-	if datesSecs == nil {
+	item, found := n.getAndCleanupUnsafe(entryKey)
+	if !found {
 		return 0
 	}
 
-	if len(*datesSecs) == 0 {
+	if item.liveCount == 0 {
 		n.tree.Remove(entryKey)
 		return 0
 	}
 
-	datesSecs = removeExpired(datesSecs)
-	count := len(*datesSecs)
-	n.tree.Put(entryKey, *datesSecs)
-	return count
+	item = removeExpired(item)
+	if item.liveCount == 0 {
+		n.tree.Remove(entryKey)
+		return 0
+	}
+
+	n.tree.Put(entryKey, item)
+	return item.liveCount
 }
 
 // KeyMatch crawls the subtree to return keys starting with the `keyPattern` string.
@@ -110,47 +119,52 @@ func (n *Tree) KeyMatch(keyPattern string) []string {
 	return out
 }
 
-func (n *Tree) Put(entryKey string) {
+func (n *Tree) Put(entryKey string) int {
 	n.Lock()
 	defer n.Unlock()
 
-	datesSecs := n.getAndCleanupUnsafe(entryKey)
-	if datesSecs == nil {
-		datesSecs = &[]int64{}
+	item, found := n.getAndCleanupUnsafe(entryKey)
+	if !found {
+		item = entry{}
 	}
-	datesSecs = removeExpired(datesSecs)
+	item = removeExpired(item)
 	secs := time.Now().Unix()
-	nextDatesSecs := append(*datesSecs, secs+n.defaultExpireAfterSecs)
-	n.tree.Put(entryKey, nextDatesSecs)
+	item.expiresAt = append(item.expiresAt, secs+n.defaultExpireAfterSecs)
+	item.liveCount = len(item.expiresAt)
+	n.tree.Put(entryKey, item)
+	return item.liveCount
 }
 
 // getAndCleanupUnsafe does not lock the mutex, so it can be used inside a lock
-func (n *Tree) getAndCleanupUnsafe(entryKey string) *[]int64 {
+func (n *Tree) getAndCleanupUnsafe(entryKey string) (entry, bool) {
 	val, found := n.tree.Get(entryKey)
 	if !found {
-		return nil
+		return entry{}, false
 	}
-	dates := val.([]int64)
-	if len(dates) == 0 {
+	item := val.(entry)
+	if item.liveCount == 0 {
 		// cleanup empty entry
 		n.tree.Remove(entryKey)
-		return nil
+		return entry{}, false
 	}
-	return &dates // not extra copy
+	return item, true
 }
 
-func removeExpired(datesSecs *[]int64) *[]int64 {
-	if len(*datesSecs) == 0 {
-		return datesSecs
+func removeExpired(item entry) entry {
+	if len(item.expiresAt) == 0 {
+		item.liveCount = 0
+		return item
 	}
 	currentTime := time.Now().Unix()
 	var out []int64
 	// TODO: these are already sorted, so we can discard earlier entries
-	for _, removeAt := range *datesSecs {
+	for _, removeAt := range item.expiresAt {
 		if removeAt > currentTime {
 			// KEEP - not expired
 			out = append(out, removeAt)
 		}
 	}
-	return &out
+	item.expiresAt = out
+	item.liveCount = len(out)
+	return item
 }
