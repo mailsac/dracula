@@ -155,16 +155,35 @@ func removeExpired(item entry) entry {
 		item.liveCount = 0
 		return item
 	}
+
 	currentTime := time.Now().Unix()
-	var out []int64
-	// TODO: these are already sorted, so we can discard earlier entries
-	for _, removeAt := range item.expiresAt {
+	firstValid := -1
+
+	// Because entries are appended using time.Now().Unix(), they are chronologically sorted.
+	for i, removeAt := range item.expiresAt {
 		if removeAt > currentTime {
-			// KEEP - not expired
-			out = append(out, removeAt)
+			firstValid = i
+			break
 		}
 	}
-	item.expiresAt = out
-	item.liveCount = len(out)
+
+	if firstValid == -1 {
+		item.expiresAt = nil
+		item.liveCount = 0
+		return item
+	}
+
+	if firstValid > 0 {
+		item.expiresAt = item.expiresAt[firstValid:]
+	}
+
+	// Prevent memory leaks: Slicing a large array keeps the entire backing array in memory.
+	if cap(item.expiresAt) > 1024 && len(item.expiresAt) < cap(item.expiresAt)/4 {
+		newSlice := make([]int64, len(item.expiresAt))
+		copy(newSlice, item.expiresAt)
+		item.expiresAt = newSlice
+	}
+
+	item.liveCount = len(item.expiresAt)
 	return item
 }

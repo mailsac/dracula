@@ -10,18 +10,45 @@ import (
 func TestTree_removeExpired(t *testing.T) {
 	keep1 := time.Now().Unix() + 5
 	keep2 := time.Now().Unix() + 200
+
+	// Because entries are appended using time.Now().Unix(), they are chronologically sorted.
+	// The slice-based implementation requires this sorting to find the first unexpired item.
 	entries := []int64{
-		time.Now().Unix() - 2,  // expired
-		time.Now().Unix() - 60, // expired
-		keep1,                  // KEEP
-		keep2,                  // KEEP
-		time.Now().Unix() - 1,  // expired
+		time.Now().Unix() - 60,
+		time.Now().Unix() - 2,
+		keep1,
+		keep2,
 	}
 
 	result := removeExpired(entry{expiresAt: entries, liveCount: len(entries)})
 	assert.Equal(t, 2, result.liveCount)
-	assert.Equal(t, result.expiresAt[0], keep1)
-	assert.Equal(t, result.expiresAt[1], keep2)
+	assert.Equal(t, keep1, result.expiresAt[0])
+	assert.Equal(t, keep2, result.expiresAt[1])
+
+	t.Run("memory reallocation when capacity is huge but length is small", func(t *testing.T) {
+		largeCapEntries := make([]int64, 0, 2000)
+		for i := 0; i < 1900; i++ {
+			largeCapEntries = append(largeCapEntries, time.Now().Unix()-100)
+		}
+		for i := 0; i < 5; i++ {
+			largeCapEntries = append(largeCapEntries, time.Now().Unix()+100)
+		}
+
+		result := removeExpired(entry{expiresAt: largeCapEntries, liveCount: len(largeCapEntries)})
+		assert.Equal(t, 5, result.liveCount)
+		assert.Equal(t, 5, len(result.expiresAt))
+		assert.LessOrEqual(t, cap(result.expiresAt), 1024, "Should have reallocated to a smaller array")
+	})
+
+	t.Run("returns empty when all expired", func(t *testing.T) {
+		allExpired := []int64{
+			time.Now().Unix() - 60,
+			time.Now().Unix() - 2,
+		}
+		result := removeExpired(entry{expiresAt: allExpired, liveCount: len(allExpired)})
+		assert.Equal(t, 0, result.liveCount)
+		assert.Equal(t, 0, len(result.expiresAt))
+	})
 }
 
 func TestTree_Count(t *testing.T) {
