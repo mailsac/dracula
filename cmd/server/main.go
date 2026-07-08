@@ -18,6 +18,7 @@ var (
 	secret          = flag.String("s", "", "Optional pre-shared auth secret if not using env var DRACULA_SECRET")
 	peerIPPort      = flag.String("i", "", "Self peer IP and host like 192.168.0.1:3509 to identify self in the cluster")
 	peers           = flag.String("c", "", "Enable cluster replication. Peers must be comma-separated ip:port like `192.168.0.1:3509,192.168.0.2:3555`.")
+	acceptLegacy    = flag.Bool("accept-legacy-auth", true, "Accept legacy v1 packet auth in addition to v2 during rollout")
 	verbose         = flag.Bool("v", false, "Verbose logging")
 	printVersion    = flag.Bool("version", false, "Print version")
 	promHostPort    = flag.String("prom", "", "Enable prometheus metrics. May cause pauses. Example: '0.0.0.0:9090'")
@@ -58,6 +59,7 @@ func main() {
 	} else {
 		s = server.NewServer(*expireAfterSecs, preSharedSecret)
 	}
+	s.SetAcceptLegacyAuth(*acceptLegacy)
 	if *verbose {
 		s.DebugEnable(fmt.Sprintf("udp:%d, tcp:%d, http:%s -", *port, *tcpPort, *restHostPort))
 	}

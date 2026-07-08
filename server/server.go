@@ -35,6 +35,7 @@ type Server struct {
 	disposed          bool
 	preSharedKey      []byte
 	expireAfterSecs   int64
+	acceptLegacyAuth  bool
 	messageProcessing chan *rawmessage.RawMessage
 	peers             []net.UDPAddr
 	log               *log.Logger
@@ -82,6 +83,7 @@ func NewServer(expireAfterSecs int64, preSharedKey string) *Server {
 		StoreMetrics:      st.LastMetrics,
 		preSharedKey:      psk,
 		expireAfterSecs:   expireAfterSecs,
+		acceptLegacyAuth:  true,
 		messageProcessing: make(chan *rawmessage.RawMessage, runtime.NumCPU()),
 		log:               log.New(os.Stdout, "", 0),
 	}
@@ -96,6 +98,10 @@ func (s *Server) DebugEnable(prefix string) {
 
 func (s *Server) DebugDisable() {
 	s.log.SetOutput(ioutil.Discard)
+}
+
+func (s *Server) SetAcceptLegacyAuth(v bool) {
+	s.acceptLegacyAuth = v
 }
 
 func (s *Server) Listen(udpPort, tcpPort int) error {
@@ -242,7 +248,19 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			respond()
 			continue
 		}
-		err = packet.Validate(s.preSharedKey)
+		if packet.Command == protocol.CmdVersion {
+			resPacket = protocol.NewPacketFromParts(protocol.CmdVersion, packet.MessageIDBytes, packet.Namespace, []byte(protocol.ProtocolVersion), s.preSharedKey)
+			respond()
+			continue
+		}
+		err = packet.ValidateVersion(s.preSharedKey, protocol.AuthVersionV2)
+		if err != nil && s.acceptLegacyAuth {
+			legacyErr := packet.ValidateVersion(s.preSharedKey, protocol.AuthVersionLegacy)
+			if legacyErr == nil {
+				s.log.Println("server accepted legacy auth packet:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString())
+				err = nil
+			}
+		}
 		if err != nil {
 			s.log.Println("server got bad hash:", remote, string(packet.Command), packet.MessageID, packet.NamespaceString(), packet.DataValueString())
 			resPacket = protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte(err.Error()), s.preSharedKey)
@@ -260,6 +278,7 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 		case protocol.CmdPut:
 			s.store.Put(packet.NamespaceString(), packet.DataValueString())
 			resPacket = protocol.NewPacketFromParts(protocol.CmdPut, packet.MessageIDBytes, packet.Namespace, []byte{}, s.preSharedKey)
+			resPacket.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 			respond()
 			if len(s.peers) != 0 {
 				// note that the packet is copied because it will be changed
@@ -273,6 +292,7 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			}
 			c := uint32(countInt)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdCount, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			resPacket.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 			respond()
 			break
 		case protocol.CmdCountNamespace:
@@ -282,6 +302,7 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			}
 			c := uint32(countInt)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdCountNamespace, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			resPacket.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 			respond()
 			break
 		case protocol.CmdCountServer:
@@ -291,22 +312,26 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 			}
 			c := uint32(countInt)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdCountServer, packet.MessageIDBytes, packet.Namespace, protocol.Uint32ToBytes(c), s.preSharedKey)
+			resPacket.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 			respond()
 			break
 		case protocol.CmdTCPOnlyKeys:
 			matchedKeys := s.store.KeyMatch(packet.NamespaceString(), packet.DataValueString())
 			s.log.Println("KeyMatch", packet.NamespaceString(), packet.DataValueString(), matchedKeys)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdTCPOnlyKeys, packet.MessageIDBytes, packet.Namespace, []byte(strings.Join(matchedKeys, "\n")), s.preSharedKey)
+			resPacket.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 			respond()
 			break
 		case protocol.CmdTCPOnlyNamespaces:
 			namespaces := s.store.Namespaces()
 			s.log.Println("Namespaces", packet.NamespaceString(), packet.DataValueString(), namespaces)
 			resPacket = protocol.NewPacketFromParts(protocol.CmdTCPOnlyNamespaces, packet.MessageIDBytes, packet.Namespace, []byte(strings.Join(namespaces, "\n")), s.preSharedKey)
+			resPacket.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 			respond()
 			break
 		default:
 			resPacket = protocol.NewPacketFromParts(protocol.ResError, packet.MessageIDBytes, packet.Namespace, []byte("unknown_command_"+string(packet.Command)), s.preSharedKey)
+			resPacket.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 			respond()
 			break
 		}
@@ -317,7 +342,7 @@ func (s *Server) worker(messages <-chan *rawmessage.RawMessage) {
 func (s *Server) republish(packet protocol.Packet) {
 	// re-hash the packet
 	packet.Command = protocol.CmdPutReplicate
-	packet.SetHash(s.preSharedKey)
+	packet.SetHashVersion(s.preSharedKey, packet.AuthVersion)
 
 	b, err := packet.Bytes()
 	if err != nil {
