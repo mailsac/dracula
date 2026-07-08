@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/mailsac/dracula/client"
+	"github.com/mailsac/dracula/protocol"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -92,6 +95,269 @@ func TestServer_Roundtrip(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestServer_VersionCommandUDPPreAuth(t *testing.T) {
+	secret := "server-secret"
+	s := NewServer(60, secret)
+	if err := s.Listen(9040, 9040); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	remote, err := net.ResolveUDPAddr("udp", "127.0.0.1:9040")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialUDP("udp", nil, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	req := protocol.NewPacket(protocol.CmdVersion, 1, "", "", "wrong-client-secret")
+	reqBytes, err := req.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Write(reqBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	resBytes := make([]byte, protocol.PacketSize)
+	n, err := conn.Read(resBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := protocol.ParsePacket(resBytes[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, protocol.CmdVersion, res.Command)
+	assert.Equal(t, protocol.ProtocolVersion, res.DataValueString())
+	assert.NoError(t, res.Validate([]byte(secret)))
+}
+
+func TestServer_VersionCommandTCPPreAuth(t *testing.T) {
+	secret := "server-secret"
+	s := NewServer(60, secret)
+	if err := s.Listen(9041, 9041); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	remote, err := net.ResolveTCPAddr("tcp", "127.0.0.1:9041")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialTCP("tcp", nil, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	req := protocol.NewPacket(protocol.CmdVersion, 1, "", "", "wrong-client-secret")
+	reqBytes, err := req.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Write(append(reqBytes, protocol.StopSymbol...)); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	resBytes := make([]byte, protocol.PacketSize+len(protocol.StopSymbol))
+	n, err := conn.Read(resBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resWire := bytes.TrimSuffix(resBytes[:n], protocol.StopSymbol)
+	res, err := protocol.ParsePacket(resWire)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, protocol.CmdVersion, res.Command)
+	assert.Equal(t, protocol.ProtocolVersion, res.DataValueString())
+	assert.NoError(t, res.Validate([]byte(secret)))
+}
+
+func TestServer_LegacyClientCompatibleByDefault(t *testing.T) {
+	secret := "server-secret"
+	s := NewServer(60, secret)
+	if err := s.Listen(9042, 9042); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	remote, err := net.ResolveUDPAddr("udp", "127.0.0.1:9042")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialUDP("udp", nil, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	req := protocol.NewPacket(protocol.CmdCount, 7, "blocked", "legacy@example.com", secret)
+	req.SetHashVersion([]byte(secret), protocol.AuthVersionLegacy)
+	reqBytes, err := req.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Write(reqBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	resBytes := make([]byte, protocol.PacketSize)
+	n, err := conn.Read(resBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := protocol.ParsePacket(resBytes[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, protocol.CmdCount, res.Command)
+	assert.NoError(t, res.ValidateVersion([]byte(secret), protocol.AuthVersionLegacy))
+}
+
+func TestServer_LegacyClientRejectedWhenDisabled(t *testing.T) {
+	secret := "server-secret"
+	s := NewServer(60, secret)
+	s.SetAcceptLegacyAuth(false)
+	if err := s.Listen(9043, 9043); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	remote, err := net.ResolveUDPAddr("udp", "127.0.0.1:9043")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialUDP("udp", nil, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	req := protocol.NewPacket(protocol.CmdCount, 7, "blocked", "legacy@example.com", secret)
+	req.SetHashVersion([]byte(secret), protocol.AuthVersionLegacy)
+	reqBytes, err := req.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Write(reqBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	resBytes := make([]byte, protocol.PacketSize)
+	n, err := conn.Read(resBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := protocol.ParsePacket(resBytes[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, protocol.ResError, res.Command)
+	assert.NoError(t, res.Validate([]byte(secret)))
+	assert.Equal(t, protocol.ErrBadHash.Error(), res.DataValueString())
+}
+
+func TestServer_EmptySecretLegacyClientCompatibleByDefault(t *testing.T) {
+	secret := ""
+	s := NewServer(60, secret)
+	if err := s.Listen(9044, 9044); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	remote, err := net.ResolveUDPAddr("udp", "127.0.0.1:9044")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialUDP("udp", nil, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	req := protocol.NewPacket(protocol.CmdCount, 7, "blocked", "legacy@example.com", secret)
+	req.SetHashVersion([]byte(secret), protocol.AuthVersionLegacy)
+	reqBytes, err := req.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Write(reqBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	resBytes := make([]byte, protocol.PacketSize)
+	n, err := conn.Read(resBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := protocol.ParsePacket(resBytes[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, protocol.CmdCount, res.Command)
+	assert.NoError(t, res.ValidateVersion([]byte(secret), protocol.AuthVersionLegacy))
+}
+
+func TestServer_EmptySecretLegacyClientRejectedWhenDisabled(t *testing.T) {
+	secret := ""
+	s := NewServer(60, secret)
+	s.SetAcceptLegacyAuth(false)
+	if err := s.Listen(9045, 9045); err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	remote, err := net.ResolveUDPAddr("udp", "127.0.0.1:9045")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := net.DialUDP("udp", nil, remote)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	req := protocol.NewPacket(protocol.CmdCount, 7, "blocked", "legacy@example.com", secret)
+	req.SetHashVersion([]byte(secret), protocol.AuthVersionLegacy)
+	reqBytes, err := req.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.Write(reqBytes); err != nil {
+		t.Fatal(err)
+	}
+
+	assert.NoError(t, conn.SetReadDeadline(time.Now().Add(time.Second)))
+	resBytes := make([]byte, protocol.PacketSize)
+	n, err := conn.Read(resBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := protocol.ParsePacket(resBytes[:n])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, protocol.ResError, res.Command)
+	assert.NoError(t, res.ValidateVersion([]byte(secret), protocol.AuthVersionV2))
+	assert.Equal(t, protocol.ErrBadHash.Error(), res.DataValueString())
 }
 
 func TestServer_Replication(t *testing.T) {
