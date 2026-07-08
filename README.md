@@ -113,6 +113,20 @@ Usage of ./dracula-server:
 
 ```
 
+### Protocol Version
+
+Dracula exposes its wire protocol version in-band with command `Z` over both UDP and TCP.
+The version command is intentionally answered before auth validation so clients can safely
+detect server capability before choosing a packet signing algorithm.
+
+Protocol version `2` signs packets with `xxhash64(secret || messageID || namespace || data)`
+encoded as little-endian uint64. This is a breaking change from protocol version `1`, whose
+auth bytes were just derived from the first 8 bytes of the hash input.
+
+The server rollout path is controlled by `--accept-legacy-auth` which defaults to `true`.
+In that mode the server tries v2 auth first and then legacy v1 auth for normal commands.
+Responses are signed using the same auth version as the request so old clients continue to work.
+
 Then use the cli for testing. Put keys to the server:
 
 ```
@@ -265,8 +279,8 @@ The namespace can be 64 bytes and the data value can be 1419 bytes.
 
 The maximum entries in a key is the highest value of uint32.
 
-Authentication is just strong enough to make sure you aren't sending messages to the wrong server. It is assumed dracula
-is running in a trusted environment.
+The auth/secret feature is intended only as a validity check. It is assumed dracula  is running in
+a trusted environment.
 
 ## Roadmap
 

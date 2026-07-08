@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/hex"
 	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
@@ -62,6 +63,20 @@ func TestParseNewPacketFromPartsWishSecret(t *testing.T) {
 		t.Fatalf("parsed value %s", string(parsed.DataValue))
 	}
 	assert.Nil(t, parsed.Validate(secret))
+}
+
+func TestPacketHashUsesXXHash64LittleEndian(t *testing.T) {
+	packet := NewPacket('C', 1, "throttled", "user@mailsac.com", "eep")
+
+	assert.Equal(t, "6a0eba16a460db3f", hex.EncodeToString(packet.HashBytes))
+	assert.Nil(t, packet.Validate([]byte("eep")))
+}
+
+func TestPacketHashUsesEntireSecret(t *testing.T) {
+	packet := NewPacket('C', 1, "throttled", "user@mailsac.com", "12345678-good")
+
+	assert.Nil(t, packet.Validate([]byte("12345678-good")))
+	assert.Equal(t, ErrBadHash, packet.Validate([]byte("12345678-bad")))
 }
 
 func TestParsePacketSizeTooLarge(t *testing.T) {

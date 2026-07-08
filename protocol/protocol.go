@@ -17,11 +17,17 @@ const (
 	NamespaceSize int = 64
 	DataValueSize int = 1419
 
+	AuthVersionLegacy = 1
+	AuthVersionV2     = 2
+
 	CmdCount          byte = 'C'
 	CmdPut            byte = 'P'
 	CmdPutReplicate   byte = 'R'
 	CmdCountNamespace byte = 'N'
 	CmdCountServer    byte = 'S'
+	CmdVersion        byte = 'Z'
+
+	ProtocolVersion = "2"
 
 	CmdTCPOnlyKeys       byte = 'K'
 	CmdTCPOnlyValues     byte = 'V'
@@ -54,7 +60,7 @@ var StopSymbol = []byte("\n.\n")
 
 // IsRequestCmd indicates if the server should accept this as a command
 func IsRequestCmd(c byte) bool {
-	return c == CmdCount || c == CmdPut || c == CmdCountNamespace || c == CmdCountServer || c == CmdPutReplicate
+	return c == CmdCount || c == CmdPut || c == CmdCountNamespace || c == CmdCountServer || c == CmdPutReplicate || c == CmdVersion
 }
 
 func IsTcpOnlyCmd(c byte) bool {
@@ -76,6 +82,7 @@ type Packet struct {
 	DataValue      []byte // fixed 1419 byte string
 
 	RequestClient *net.TCPConn
+	AuthVersion   int
 }
 
 // NewPacket is a friendlier way to construct a packet and will provide conversions inline
@@ -94,6 +101,7 @@ func NewPacketFromParts(command byte, messageID, namespace, dataValue, preShared
 		MessageIDBytes: messageID,
 		Namespace:      *PadRight(&namespace, NamespaceSize),
 		DataValue:      *PadRight(&dataValue, DataValueSize),
+		AuthVersion:    AuthVersionV2,
 	}
 	p.SetHash(preSharedKey)
 	return p
@@ -142,7 +150,8 @@ func ParsePacket(buf []byte) (*Packet, error) {
 
 		Namespace: nsBytes, // then a space
 
-		DataValue: rightSizeData,
+		DataValue:   rightSizeData,
+		AuthVersion: AuthVersionV2,
 	}
 
 	commandIsValid := IsRequestCmd(p.Command) || IsResponseCmd(p.Command) || IsTcpOnlyCmd(p.Command)
@@ -219,31 +228,55 @@ func (p *Packet) Bytes() ([]byte, error) {
 
 // HashPacket returns an 8 byte slice
 func HashPacket(p *Packet, preSharedKey []byte) []byte {
-	hasher := xxhash.New64()
+	return HashPacketVersion(p, preSharedKey, AuthVersionV2)
+}
+
+// HashPacketVersion returns an 8 byte slice using the requested auth format.
+func HashPacketVersion(p *Packet, preSharedKey []byte, authVersion int) []byte {
+	if authVersion == AuthVersionLegacy {
+		bytesToHash := make([]byte, 0, len(preSharedKey)+len(p.MessageIDBytes)+len(p.Namespace)+len(p.DataValue))
+		bytesToHash = append(bytesToHash, preSharedKey...)
+		bytesToHash = append(bytesToHash, p.MessageIDBytes...)
+		bytesToHash = append(bytesToHash, p.Namespace...)
+		bytesToHash = append(bytesToHash, p.DataValue...)
+		padded := *PadRight(&bytesToHash, 8)
+		return padded[0:8]
+	}
 	// omit the spaces and hash the Message ID, Namespace, and DataValue
-	bytesToHash := append(preSharedKey, p.MessageIDBytes...)
+	bytesToHash := make([]byte, 0, len(preSharedKey)+len(p.MessageIDBytes)+len(p.Namespace)+len(p.DataValue))
+	bytesToHash = append(bytesToHash, preSharedKey...)
+	bytesToHash = append(bytesToHash, p.MessageIDBytes...)
 	bytesToHash = append(bytesToHash, p.Namespace...)
 	bytesToHash = append(bytesToHash, p.DataValue...)
-	return hasher.Sum(bytesToHash)
+	return Uint64ToBytes(xxhash.Checksum64(bytesToHash))
 }
 
 // SetHash puts the hash on a packet
 func (p *Packet) SetHash(preSharedKey []byte) {
-	// omit the spaces and hash the Message ID, Namespace, and DataValue
-	bytesToHash := append(preSharedKey, p.MessageIDBytes...)
-	bytesToHash = append(bytesToHash, p.Namespace...)
-	bytesToHash = append(bytesToHash, p.DataValue...)
-	p.HashBytes = HashPacket(p, preSharedKey)
+	p.SetHashVersion(preSharedKey, AuthVersionV2)
+}
+
+// SetHashVersion puts the requested auth format on a packet.
+func (p *Packet) SetHashVersion(preSharedKey []byte, authVersion int) {
+	p.AuthVersion = authVersion
+	p.HashBytes = HashPacketVersion(p, preSharedKey, authVersion)
 	p.Hash = Uint64FromBytes(p.HashBytes)
 }
 
 // Validate returns an error is the packet's hash does not authenticate against the preSharedKey.
 func (p *Packet) Validate(preSharedKey []byte) error {
-	expectedHash := Uint64FromBytes(HashPacket(p, preSharedKey))
+	return p.ValidateVersion(preSharedKey, AuthVersionV2)
+}
+
+// ValidateVersion returns an error if the packet hash does not authenticate
+// against the preSharedKey under the requested auth format.
+func (p *Packet) ValidateVersion(preSharedKey []byte, authVersion int) error {
+	expectedHash := Uint64FromBytes(HashPacketVersion(p, preSharedKey, authVersion))
 	if p.Hash != expectedHash {
 		fmt.Printf("packet hash fail, packet: %d, server: %d \n", p.Hash, expectedHash)
 		return ErrBadHash
 	}
+	p.AuthVersion = authVersion
 	return nil
 }
 
